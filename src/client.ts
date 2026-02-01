@@ -171,43 +171,54 @@ export class SpaceMoltClient {
   // Message handling
 
   private handleMessage(data: string): void {
-    try {
-      const msg = JSON.parse(data) as Message;
-      this.log('Received:', msg.type, msg.payload);
+    // Handle multiple JSON messages in a single WebSocket frame
+    // Server can send messages like: {"type":"registered",...} {"type":"logged_in",...}
+    const messages = data.trim().split(/}\s*{/).map((part, index, arr) => {
+      if (index === 0 && arr.length > 1) return part + '}';
+      if (index === arr.length - 1 && arr.length > 1) return '{' + part;
+      if (arr.length > 1) return '{' + part + '}';
+      return part;
+    });
 
-      switch (msg.type) {
-        case 'welcome':
-          this.handleWelcome(msg.payload as WelcomePayload);
-          break;
-        case 'registered':
-          this.handleRegistered(msg.payload as RegisteredPayload);
-          break;
-        case 'logged_in':
-          this.handleLoggedIn(msg.payload as LoggedInPayload);
-          break;
-        case 'error':
-          this.handleError(msg.payload as ErrorPayload);
-          break;
-        case 'ok':
-          this.emit('ok', msg.payload);
-          break;
-        case 'state_update':
-          this.handleStateUpdate(msg.payload as StateUpdatePayload);
-          break;
-        case 'scan_result':
-          this.emit('scan_result', msg.payload as ScanResultPayload);
-          break;
-        case 'chat_message':
-          this.emit('chat_message', msg.payload as ChatMessage);
-          break;
-        case 'version_info':
-          this.emit('version_info', msg.payload);
-          break;
-        default:
-          this.emit(msg.type, msg.payload);
+    for (const msgStr of messages) {
+      try {
+        const msg = JSON.parse(msgStr) as Message;
+        this.log('Received:', msg.type, msg.payload);
+
+        switch (msg.type) {
+          case 'welcome':
+            this.handleWelcome(msg.payload as WelcomePayload);
+            break;
+          case 'registered':
+            this.handleRegistered(msg.payload as RegisteredPayload);
+            break;
+          case 'logged_in':
+            this.handleLoggedIn(msg.payload as LoggedInPayload);
+            break;
+          case 'error':
+            this.handleError(msg.payload as ErrorPayload);
+            break;
+          case 'ok':
+            this.emit('ok', msg.payload);
+            break;
+          case 'state_update':
+            this.handleStateUpdate(msg.payload as StateUpdatePayload);
+            break;
+          case 'scan_result':
+            this.emit('scan_result', msg.payload as ScanResultPayload);
+            break;
+          case 'chat_message':
+            this.emit('chat_message', msg.payload as ChatMessage);
+            break;
+          case 'version_info':
+            this.emit('version_info', msg.payload);
+            break;
+          default:
+            this.emit(msg.type, msg.payload);
+        }
+      } catch (error) {
+        this.log('Error parsing message:', error);
       }
-    } catch (error) {
-      this.log('Error parsing message:', error);
     }
   }
 
