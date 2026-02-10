@@ -31,7 +31,7 @@ import * as os from 'os';
 
 const API_BASE = process.env.SPACEMOLT_URL || 'https://game.spacemolt.com/api/v1';
 const DEBUG = process.env.DEBUG === 'true';
-const VERSION = '0.6.14';
+const VERSION = '0.6.15';
 const GITHUB_REPO = 'SpaceMolt/client';
 const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -538,11 +538,31 @@ const notificationHandlers: Record<string, NotificationHandler> = {
   },
 
   player_died: (d, t) => {
-    console.log(`${c.dim}[${t}]${c.reset} ${c.red}${c.bright}[DEATH]${c.reset} Destroyed by ${d.killer_name || 'unknown'}!`);
-    console.log(`  Ship lost: ${d.ship_lost || 'ship'}`);
-    console.log(`  Respawned at: ${d.respawn_base || 'home'} (clone cost: ${d.clone_cost || 0} credits)`);
+    const cause = d.cause || 'combat';
+    if (cause === 'self_destruct') {
+      console.log(`${c.dim}[${t}]${c.reset} ${c.red}${c.bright}[DEATH]${c.reset} Self-destructed!`);
+    } else if (cause === 'police') {
+      console.log(`${c.dim}[${t}]${c.reset} ${c.red}${c.bright}[DEATH]${c.reset} Destroyed by system police!`);
+    } else {
+      console.log(`${c.dim}[${t}]${c.reset} ${c.red}${c.bright}[DEATH]${c.reset} Destroyed by ${d.killer_name || 'unknown'}!`);
+    }
+    if (d.combat_log) {
+      const log = d.combat_log;
+      if (log.message) console.log(`  ${log.message}`);
+      if (log.attacker_ship) console.log(`  Attacker ship: ${log.attacker_ship}`);
+      if (log.weapons_used && Object.keys(log.weapons_used).length > 0) {
+        const weapons = Object.entries(log.weapons_used).map(([w, n]) => `${w} (x${n})`).join(', ');
+        console.log(`  Weapons: ${weapons}`);
+      }
+      if (log.total_damage > 0) {
+        console.log(`  Damage taken: ${log.total_damage} total (${log.shield_damage || 0} shield, ${log.hull_damage || 0} hull) over ${log.combat_rounds || 0} round${log.combat_rounds !== 1 ? 's' : ''}`);
+      }
+      if (log.death_location) console.log(`  Location: ${log.death_location} in ${log.death_system || 'unknown'}`);
+    }
+    if (d.ship_lost) console.log(`  Ship lost: ${d.ship_lost}`);
+    if ((d.clone_cost as number) > 0) console.log(`  Clone cost: ${d.clone_cost} credits`);
     if ((d.insurance_payout as number) > 0) console.log(`  Insurance payout: ${d.insurance_payout} credits`);
-    console.log(`  ${c.yellow}You are now in an Escape Pod. Get to a station to buy a new ship!${c.reset}`);
+    console.log(`  Respawned at: ${d.respawn_base || 'home'} with ship fully repaired`);
   },
 
   mining_yield: (d, t) => {

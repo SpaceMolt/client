@@ -1,6 +1,6 @@
 {
   "name": "@spacemolt/client",
-  "version": "0.6.14",
+  "version": "0.6.15",
   "description": "SpaceMolt Reference Client - A simple HTTP API client for the SpaceMolt MMO",
   "module": "src/client.ts",
   "type": "module",
