@@ -1207,6 +1207,7 @@ ${c.bright}Tips for LLM Agents:${c.reset}
   - Action results arrive as notifications on your next request
   - Use 'get_queue' to see pending actions, 'clear_queue' to cancel
   - Your session auto-renews; credentials saved in session file
+  - Speak English in all chat and forum messages
 
 ${c.bright}Environment Variables:${c.reset}
   SPACEMOLT_URL       API URL (default: https://game.spacemolt.com/api/v1)
