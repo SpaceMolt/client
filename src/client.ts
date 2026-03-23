@@ -3,13 +3,13 @@
  * SpaceMolt Reference Client
  *
  * A simple HTTP API client for SpaceMolt, designed for LLM agents.
- * Stores session in ~/.config/spacemolt/session.json
+ * Stores session in ./.spacemolt-session.json (current working directory)
  *
  * Usage:
  *   spacemolt <command> [key=value ...] or [positional args]
  *
  * Examples:
- *   spacemolt register myname solarian
+ *   spacemolt register myname solarian <registration_code>
  *   spacemolt login myname abc123...
  *   spacemolt get_status
  *   spacemolt mine
@@ -17,7 +17,7 @@
  *
  * Environment:
  *   SPACEMOLT_URL     - API base URL (default: https://game.spacemolt.com/api/v1)
- *   SPACEMOLT_SESSION - Session file path (default: ~/.config/spacemolt/session.json)
+ *   SPACEMOLT_SESSION - Session file path (default: ./.spacemolt-session.json)
  *   DEBUG             - Enable verbose logging (default: false)
  */
 
@@ -325,7 +325,6 @@ const COMMANDS: Record<string, CommandConfig> = {
 
   // Cargo
   jettison: { args: ['item_id', 'quantity'] },
-  inspect_cargo: {},
 
   // Station storage
   view_storage: { args: ['station_id'] },
@@ -434,19 +433,6 @@ const COMMANDS: Record<string, CommandConfig> = {
   get_insurance_quote: {},
   claim_insurance: {},
 
-  // Base building & raiding
-  build_base: { args: ['name'], required: ['name'], usage: '<name>  (build a base at current POI)' },
-  get_base_cost: {},
-  attack_base: { args: ['base_id'], required: ['base_id'], usage: '<base_id>  (raid an enemy base)' },
-  raid_status: {},
-  get_base_wrecks: {},
-  loot_base_wreck: {
-    args: ['wreck_id', 'item_id', 'quantity'],
-    required: ['wreck_id', 'item_id'],
-    usage: '<wreck_id> <item_id> [quantity]',
-  },
-  salvage_base_wreck: { args: ['wreck_id'], required: ['wreck_id'], usage: '<wreck_id>' },
-
   // Drones
   deploy_drone: { args: ['drone_type'], required: ['drone_type'], usage: '<drone_type>  (deploy an offensive drone)' },
   recall_drone: { args: ['drone_id'], required: ['drone_id'], usage: '<drone_id>  (recall a deployed drone)' },
@@ -455,15 +441,6 @@ const COMMANDS: Record<string, CommandConfig> = {
     required: ['drone_id', 'order'],
     usage: '<drone_id> <order> [target_id]  (give drone orders)',
   },
-  get_drones: {},
-
-  // Friends
-  add_friend: { args: ['player_id'], required: ['player_id'], usage: '<player_id>' },
-  remove_friend: { args: ['player_id'], required: ['player_id'], usage: '<player_id>' },
-  get_friends: {},
-  get_friend_requests: {},
-  accept_friend_request: { args: ['player_id'], required: ['player_id'], usage: '<player_id>' },
-  decline_friend_request: { args: ['player_id'], required: ['player_id'], usage: '<player_id>' },
 
   // Query commands
   get_status: {},
@@ -512,7 +489,6 @@ const COMMANDS: Record<string, CommandConfig> = {
       '<type> [id] [category] [search] [page] [page_size] [commissionable=true/false]  (types: ships, items, skills, recipes)',
   },
   get_guide: { args: ['guide'] },
-  search_changelog: { args: ['text', 'id'] },
   help: { args: ['category', 'command'] },
 
   // Agent logging
@@ -1135,7 +1111,6 @@ const notificationHandlers: Record<string, NotificationHandler> = {
     console.log(
       `${c.dim}[${t}]${c.reset} ${c.cyan}[FRIEND]${c.reset} ${d.from_name || 'Someone'} sent you a friend request`,
     );
-    console.log(`  Use: accept_friend_request or decline_friend_request`);
   },
 
   system: (d, t) => {
@@ -1385,7 +1360,7 @@ const resultFormatters: ResultFormatter[] = [
     return true;
   },
 
-  // Skills
+  // Skills (v2 format: player_skills array + skills metadata)
   (r) => {
     if (r.skills === undefined || r.player_skills === undefined) return false;
     const playerSkills = (r.player_skills as Array<Record<string, unknown>>) || [];
@@ -1411,6 +1386,74 @@ const resultFormatters: ResultFormatter[] = [
     return true;
   },
 
+  // Skills (v1 format: skills as object map of skill_id -> skill data)
+  (r) => {
+    if (!r.skills || typeof r.skills !== 'object' || Array.isArray(r.skills)) return false;
+    const skills = r.skills as Record<
+      string,
+      {
+        name: string;
+        category: string;
+        level: number;
+        max_level: number;
+        xp: number;
+        next_level_xp?: number;
+      }
+    >;
+    const skillEntries = Object.entries(skills);
+    if (skillEntries.length === 0) return false;
+    // Verify this looks like a skills map (entries should have name/level)
+    if (!skillEntries[0][1].name || skillEntries[0][1].level === undefined) return false;
+    console.log(`\n${c.bright}=== Your Skills ===${c.reset}`);
+    const byCategory: Record<string, typeof skillEntries> = {};
+    for (const [skillId, skill] of skillEntries) {
+      const cat = skill.category || 'Other';
+      if (!byCategory[cat]) byCategory[cat] = [];
+      byCategory[cat].push([skillId, skill]);
+    }
+    for (const [category, entries] of Object.entries(byCategory)) {
+      console.log(`\n${c.cyan}${category}:${c.reset}`);
+      for (const [, skill] of entries) {
+        const progress = skill.next_level_xp
+          ? ` (${skill.xp}/${skill.next_level_xp} XP to level ${skill.level + 1})`
+          : skill.level >= skill.max_level
+            ? ' (MAX)'
+            : ` (${skill.xp} XP)`;
+        console.log(`  ${skill.name}: Level ${skill.level}/${skill.max_level}${progress}`);
+      }
+    }
+    return true;
+  },
+
+  // Ship listings (browse_ships) — must come before market listings since both use r.listings
+  (r) => {
+    if (!Array.isArray(r.listings)) return false;
+    const listings = r.listings as Array<Record<string, unknown>>;
+    if (listings.length === 0 || !listings[0].ship_id) return false;
+    console.log(`\n${c.bright}=== Ships for Sale @ ${r.base_name || 'Station'} ===${c.reset}`);
+    for (const listing of listings) {
+      const shipClass = listing.class_id || 'Unknown';
+      const shipName = listing.ship_name || shipClass;
+      const price = listing.price as number;
+      const formattedPrice = price.toLocaleString();
+      const scale = listing.scale ? `(Scale ${listing.scale})` : '';
+      const tier = listing.tier ? `T${listing.tier}` : '';
+      const category = listing.category ? `${listing.category}` : '';
+      const categoryTier = [category, tier].filter(Boolean).join(' - ');
+      const hull = listing.hull ? `Hull: ${listing.hull}/${listing.max_hull}` : '';
+      const shield = listing.shield ? `Shield: ${listing.shield}` : '';
+      const stats = [hull, shield].filter(Boolean).join(', ');
+      const seller = listing.seller || listing.seller_name || listing.seller_id || 'Unknown';
+      console.log(`\n${c.cyan}${shipName}${c.reset} (${shipClass}) ${scale}`);
+      if (categoryTier) console.log(`  ${categoryTier}`);
+      console.log(`  Price: ${c.yellow}${formattedPrice} credits${c.reset}`);
+      if (stats) console.log(`  ${stats}`);
+      console.log(`  Seller: ${seller}`);
+      console.log(`  Listing ID: ${listing.listing_id}`);
+    }
+    return true;
+  },
+
   // Market listings
   (r) => {
     if (!Array.isArray(r.listings)) return false;
@@ -1429,6 +1472,58 @@ const resultFormatters: ResultFormatter[] = [
         console.log(`    Listing ID: ${listing.listing_id}`);
         console.log(`    Seller: ${seller}`);
       }
+    }
+    return true;
+  },
+
+  // Location info (get_location) — must come before simple message formatter since
+  // the response has both r.location and r.message, which the simple formatter swallows
+  (r) => {
+    if (!r.location || typeof r.location !== 'object') return false;
+    const loc = r.location as {
+      system_id: string;
+      system_name: string;
+      empire: string;
+      security_status: string;
+      connections: string[];
+      poi_id: string;
+      poi_name: string;
+      poi_type: string;
+      docked_at?: string;
+      nearby_players: Array<Record<string, unknown>>;
+      nearby_player_count: number;
+      nearby_pirates: Array<Record<string, unknown>>;
+      nearby_pirate_count: number;
+      nearby_empire_npcs?: Array<Record<string, unknown>>;
+      nearby_empire_npc_count?: number;
+    };
+    console.log(`\n${c.bright}=== Location ===${c.reset}`);
+    console.log(`${c.cyan}System:${c.reset} ${loc.system_name} (${loc.system_id})`);
+    console.log(`${c.cyan}Empire:${c.reset} ${loc.empire}`);
+    console.log(`${c.cyan}Security:${c.reset} ${loc.security_status}`);
+    if (loc.connections.length > 0) {
+      console.log(`${c.cyan}Connections:${c.reset} ${loc.connections.join(', ')}`);
+    }
+    console.log(`${c.cyan}POI:${c.reset} ${loc.poi_name} (${loc.poi_type})`);
+    if (loc.docked_at) {
+      console.log(`${c.cyan}Docked at:${c.reset} ${loc.docked_at}`);
+    }
+    if (loc.nearby_player_count > 0) {
+      console.log(`\n${c.bright}Nearby Players (${loc.nearby_player_count}):${c.reset}`);
+      for (const player of loc.nearby_players.slice(0, 10)) {
+        const inCombat = player.in_combat ? ` ${c.red}[IN COMBAT]${c.reset}` : '';
+        const tag = player.faction_tag ? ` (${player.faction_tag})` : '';
+        console.log(`  ${player.username} — ${player.ship_class}${tag}${inCombat}`);
+      }
+      if (loc.nearby_player_count > 10) {
+        console.log(`  ... and ${loc.nearby_player_count - 10} more`);
+      }
+    }
+    if (loc.nearby_pirate_count > 0) {
+      console.log(`\n${c.red}Nearby Pirates: ${loc.nearby_pirate_count}${c.reset}`);
+    }
+    if (loc.nearby_empire_npc_count && loc.nearby_empire_npc_count > 0) {
+      console.log(`\n${c.dim}Nearby NPCs: ${loc.nearby_empire_npc_count}${c.reset}`);
     }
     return true;
   },
@@ -1612,7 +1707,6 @@ ${c.bright}Information Commands (unlimited):${c.reset}
   get_battle_status   Current battle state
   catalog <type>      Browse ships/items/skills/recipes
   get_guide [guide]   Game guide and onboarding info
-  search_changelog    Search release notes
   help                Full command list from server
   get_commands        Structured command list (for automation)
 

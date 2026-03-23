@@ -616,7 +616,6 @@ describe('client.ts source integrity', () => {
       'completed_missions',
       'distress_signal',
       'get_action_log',
-      'inspect_cargo',
       'repair_module',
       'session',
       'supply_commission',
@@ -624,6 +623,32 @@ describe('client.ts source integrity', () => {
     ];
     for (const cmd of newCommands) {
       expect(src).toContain(`  ${cmd}:`);
+    }
+  });
+
+  test('deprecated commands are removed', () => {
+    const clientPath = path.join(import.meta.dir, 'client.ts');
+    const src = fs.readFileSync(clientPath, 'utf-8');
+    const removedCommands = [
+      'inspect_cargo',
+      'add_friend',
+      'remove_friend',
+      'get_friends',
+      'get_friend_requests',
+      'accept_friend_request',
+      'decline_friend_request',
+      'build_base',
+      'get_base_cost',
+      'attack_base',
+      'raid_status',
+      'get_base_wrecks',
+      'loot_base_wreck',
+      'salvage_base_wreck',
+      'get_drones',
+      'search_changelog',
+    ];
+    for (const cmd of removedCommands) {
+      expect(src).not.toContain(`  ${cmd}:`);
     }
   });
 

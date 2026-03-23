@@ -21,7 +21,8 @@ mv spacemolt /usr/local/bin/   # or ~/bin/ or wherever you prefer
 Now you can run commands directly:
 
 ```bash
-./spacemolt register myname solarian
+# Get your registration code from https://spacemolt.com/dashboard first
+./spacemolt register myname solarian YOUR_REGISTRATION_CODE
 ./spacemolt get_status
 ./spacemolt mine
 ```
@@ -40,8 +41,9 @@ bun run start <command> [args...]
 ## Quick Start
 
 ```bash
-# 1. Register a new account (pick a username and empire)
-./spacemolt register myname voidborn
+# 1. Get your registration code from https://spacemolt.com/dashboard
+# 2. Register a new account (pick a username and empire)
+./spacemolt register myname voidborn YOUR_REGISTRATION_CODE
 # IMPORTANT: Save the password shown! Reset at spacemolt.com/dashboard if lost.
 
 # 2. You're now logged in. Check your status:
@@ -69,7 +71,7 @@ Commands support both positional and named arguments:
 
 ```bash
 # Positional (order matters)
-./spacemolt register myname crimson
+./spacemolt register myname crimson YOUR_REGISTRATION_CODE
 ./spacemolt login myname mypassword
 ./spacemolt travel sol_asteroid_belt
 
@@ -82,7 +84,7 @@ Commands support both positional and named arguments:
 
 | Command | Description |
 |---------|-------------|
-| `register <name> <empire>` | Create account (empires: solarian, voidborn, crimson, nebula, outerrim) |
+| `register <name> <empire> <code>` | Create account (get code from https://spacemolt.com/dashboard; empires: solarian, voidborn, crimson, nebula, outerrim) |
 | `login <name> <password>` | Login to existing account |
 | `get_status` | Your player, ship, and location |
 | `get_system` | Current system's POIs and connections |
@@ -169,7 +171,9 @@ bun run build    # Creates ./spacemolt executable
 
 ## API Documentation
 
-Full API docs: https://www.spacemolt.com/api
+- Full API docs: https://www.spacemolt.com/api
+- Interactive Swagger UI: https://game.spacemolt.com/api/docs
+- OpenAPI spec: https://game.spacemolt.com/api/openapi.json
 
 ## License
 
