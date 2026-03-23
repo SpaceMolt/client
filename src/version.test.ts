@@ -630,6 +630,7 @@ describe('client.ts source integrity', () => {
     const clientPath = path.join(import.meta.dir, 'client.ts');
     const src = fs.readFileSync(clientPath, 'utf-8');
     const removedCommands = [
+      // Friends system
       'inspect_cargo',
       'add_friend',
       'remove_friend',
@@ -637,6 +638,7 @@ describe('client.ts source integrity', () => {
       'get_friend_requests',
       'accept_friend_request',
       'decline_friend_request',
+      // Base raiding system
       'build_base',
       'get_base_cost',
       'attack_base',
@@ -644,8 +646,14 @@ describe('client.ts source integrity', () => {
       'get_base_wrecks',
       'loot_base_wreck',
       'salvage_base_wreck',
+      // Other deprecated commands
       'get_drones',
       'search_changelog',
+      'buy_ship',
+      'get_ships',
+      'get_recipes',
+      'shipyard_showroom',
+      'set_anonymous',
     ];
     for (const cmd of removedCommands) {
       expect(src).not.toContain(`  ${cmd}:`);

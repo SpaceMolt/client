@@ -159,11 +159,7 @@ const COMMANDS: Record<string, CommandConfig> = {
   salvage_wreck: { args: ['wreck_id'], required: ['wreck_id'], usage: '<wreck_id>' },
 
   // Ship management
-  buy_ship: {
-    args: ['ship_class'],
-    required: ['ship_class'],
-    usage: '<ship_class>  (use get_base to see available ships)',
-  },
+  name_ship: { args: ['name'], required: ['name'], usage: '<name>  (set a custom name for your current ship)' },
   sell_ship: {
     args: ['ship_id'],
     required: ['ship_id'],
@@ -282,8 +278,6 @@ const COMMANDS: Record<string, CommandConfig> = {
   // Player settings
   set_status: { args: ['status_message', 'clan_tag'] },
   set_colors: { args: ['primary_color', 'secondary_color'] },
-  set_anonymous: { args: ['anonymous'] },
-
   // Notes
   create_note: { args: ['title', { rest: 'content' }] },
   write_note: { args: ['note_id', { rest: 'content' }] },
@@ -406,7 +400,6 @@ const COMMANDS: Record<string, CommandConfig> = {
   sell_wreck: {},
 
   // Shipyard
-  shipyard_showroom: { args: ['category', 'scale'] },
   commission_ship: {
     args: ['ship_class', 'provide_materials'],
     required: ['ship_class'],
@@ -448,17 +441,16 @@ const COMMANDS: Record<string, CommandConfig> = {
   get_poi: {},
   get_base: {},
   get_ship: {},
-  get_ships: {},
   get_cargo: {},
   get_nearby: {},
   get_skills: {},
-  get_recipes: {},
   get_map: { args: ['system_id'] },
   get_trades: {},
   get_wrecks: {},
   get_version: { args: ['count', 'page'] },
   get_commands: {},
   get_location: {},
+  get_notifications: {},
   survey_system: {},
   get_action_log: {
     args: ['category', 'limit', 'before'],
@@ -476,6 +468,11 @@ const COMMANDS: Record<string, CommandConfig> = {
   v2_get_skills: {},
 
   // Unified commands
+  fleet: {
+    args: ['action', 'player_id'],
+    required: ['action'],
+    usage: '<action> [player_id]  (actions: create, invite, accept, decline, leave, kick, disband, status)',
+  },
   storage: {
     args: ['action', 'item_id', 'quantity'],
     usage: '<action> [item_id] [quantity]  (unified storage interface)',
@@ -1225,7 +1222,7 @@ const resultFormatters: ResultFormatter[] = [
       console.log(`\n${c.yellow}WARNING: You are in an Escape Pod!${c.reset}`);
       console.log(`  - No cargo capacity, no weapons, no defenses`);
       console.log(`  - Infinite fuel - travel anywhere`);
-      console.log(`  - Get to a station and buy a new ship with 'buy_ship'`);
+      console.log(`  - Get to a station and commission or buy a ship with 'commission_ship' or 'browse_ships'`);
     }
 
     if (r.travel_progress !== undefined) {
@@ -1743,7 +1740,6 @@ ${c.bright}Action Commands (1 per tick, ~10 seconds):${c.reset}
     sell_wreck                Sell towed wreck at station
 
   ${c.cyan}Shipyard:${c.reset}
-    shipyard_showroom         Browse ships at station shipyard
     commission_ship <class>   Order a custom ship build
     commission_quote <class>  Get build quote
     commission_status         Check build progress
