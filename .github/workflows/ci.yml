@@ -26,7 +26,7 @@ jobs:
         run: bun run lint
 
       - name: Unit tests
-        run: bun test --testNamePattern "^(?!.*api sync)"
+        run: bun test src/version.test.ts
 
       - name: API sync test
-        run: bun test --testNamePattern "api sync"
+        run: bun test src/api-sync.test.ts
