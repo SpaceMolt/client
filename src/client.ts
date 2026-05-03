@@ -52,6 +52,60 @@ const c = {
   cyan: '\x1b[36m',
 };
 
+/** Apply 24-bit ANSI foreground (primary) and background (secondary) from hex color strings. */
+function hexColor(text: string, fg?: string, bg?: string): string {
+  if (!fg && !bg) return text;
+  const hex = (h: string) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  let prefix = '';
+  if (fg) {
+    const [r, g, b] = hex(fg);
+    prefix += `\x1b[38;2;${r};${g};${b}m`;
+  }
+  if (bg) {
+    const [r, g, b] = hex(bg);
+    prefix += `\x1b[48;2;${r};${g};${b}m`;
+  }
+  return `${prefix}${text}${c.reset}`;
+}
+
+/** Format a player entry for display (used by get_nearby and get_location). */
+function formatPlayer(p: Record<string, unknown>): string {
+  const rawName = p.anonymous ? '[Anonymous]' : (p.username as string);
+  const name = hexColor(rawName, p.primary_color as string, p.secondary_color as string);
+  const faction = p.faction_tag ? ` [${p.faction_tag}]` : '';
+  const status = p.status_message ? ` - "${p.status_message}"` : '';
+  const combat = p.in_combat ? ` ${c.red}[IN COMBAT]${c.reset}` : '';
+  const ship = p.ship_class ? ` (${p.ship_class})` : '';
+  return `${name}${faction}${ship}${status}${combat}`;
+}
+
+/** Print an item list as an aligned table with ID, Name, Qty, and Unit Size columns. */
+function printItemTable(items: Array<Record<string, unknown>>, indent = '  '): void {
+  console.log(`${c.bright}Items (${items.length}):${c.reset}`);
+  if (!items.length) {
+    console.log(`${indent}(Empty)`);
+    return;
+  }
+  console.log('');
+  // Compute column widths
+  const idW = Math.max(2, ...items.map((i) => String(i.item_id || '').length));
+  const nameW = Math.max(4, ...items.map((i) => String(i.name || i.item_id || '').length));
+  const qtyW = Math.max(3, ...items.map((i) => String(i.quantity ?? '').length));
+  const sizeW = Math.max(9, ...items.map((i) => String(i.size ?? '').length));
+
+  const hdr = `${indent}${'Name'.padEnd(nameW)} | ${'ID'.padEnd(idW)} | ${'Qty'.padStart(qtyW)} | ${'Unit Size'.padStart(sizeW)}`;
+  const sep = `${indent}${'-'.repeat(nameW)}-+-${'-'.repeat(idW)}-+-${'-'.repeat(qtyW)}-+-${'-'.repeat(sizeW)}`;
+  console.log(hdr);
+  console.log(sep);
+  for (const item of items) {
+    const name = String(item.name || item.item_id || '').padEnd(nameW);
+    const id = String(item.item_id || '').padEnd(idW);
+    const qty = String(item.quantity ?? '').padStart(qtyW);
+    const size = String(item.size ?? '').padStart(sizeW);
+    console.log(`${indent}${name} | ${id} | ${qty} | ${size}`);
+  }
+}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -1186,10 +1240,16 @@ function displayNotifications(notifications?: APIResponse['notifications']): voi
 // Result Display
 // =============================================================================
 
-type ResultFormatter = (result: Record<string, unknown>) => boolean;
+interface NamedFormatter {
+  name: string;
+  /** Keys that hint this formatter *should* match — used for drift detection */
+  hintKeys: string[];
+  format: (result: Record<string, unknown>) => boolean;
+}
 
-const resultFormatters: ResultFormatter[] = [
+const resultFormatters: NamedFormatter[] = [
   // Player status
+  { name: 'player_status', hintKeys: ['player', 'ship'], format:
   (r) => {
     if (!r.player || !r.ship) return false;
     const p = r.player as Record<string, unknown>;
@@ -1243,10 +1303,10 @@ const resultFormatters: ResultFormatter[] = [
       if (nearby.length > 5) console.log(`  ... and ${nearby.length - 5} more`);
     }
     return true;
-  },
+  } },
 
   // Registration
-  (r) => {
+  { name: 'registration', hintKeys: ['password', 'player_id'], format: (r) => {
     if (!r.password || !r.player_id) return false;
     console.log(`\n${c.green}${c.bright}=== Registration Successful ===${c.reset}`);
     console.log(`Player ID: ${r.player_id}`);
@@ -1259,84 +1319,141 @@ const resultFormatters: ResultFormatter[] = [
     console.log(`  mine          - Mine resources (at asteroid belts)`);
     console.log(`  help          - Get full command list from server`);
     return true;
-  },
+  } },
 
-  // System info
-  (r) => {
-    if (!r.id || !r.pois || !r.connections) return false;
-    console.log(`\n${c.bright}=== System: ${r.name} ===${c.reset}`);
-    console.log(`ID: ${r.id}`);
-    console.log(`Empire: ${r.empire || 'None'}`);
-    console.log(`Police Level: ${r.police_level} (${r.security_status || 'unknown security'})`);
-    if (r.description) console.log(`Description: ${r.description}`);
+  // System info — response wraps data under r.system
+  { name: 'system_info', hintKeys: ['system', 'poi', 'security_status'], format: (r) => {
+    const sys = r.system as Record<string, unknown> | undefined;
+    if (!sys?.id || !sys.pois || !sys.connections) return false;
+    console.log(`\n${c.bright}=== System: ${sys.name} ===${c.reset}`);
+    console.log(`ID: ${sys.id}`);
+    console.log(`Empire: ${sys.empire || 'None'}`);
+    console.log(`Police Level: ${sys.police_level} (${r.security_status || sys.security_status || 'unknown security'})`);
+    if (sys.description) console.log(`Description: ${sys.description}`);
 
+    const pois = sys.pois as Array<Record<string, unknown>>;
     console.log(`\n${c.bright}Points of Interest:${c.reset}`);
-    for (const poiId of r.pois as string[]) console.log(`  - ${poiId}`);
+    for (const poi of pois) {
+      const online = (poi.online as number) > 0 ? ` ${c.cyan}(${poi.online} online)${c.reset}` : '';
+      const base = poi.has_base ? ` ${c.green}[base]${c.reset}` : '';
+      console.log(`  - ${poi.name} (${poi.type})${base}${online}  ${c.dim}${poi.id}${c.reset}`);
+    }
 
+    const connections = sys.connections as Array<Record<string, unknown>>;
     console.log(`\n${c.bright}Connected Systems:${c.reset}`);
-    for (const connId of r.connections as string[]) console.log(`  - ${connId}`);
-    return true;
-  },
+    for (const conn of connections) {
+      console.log(`  - ${conn.name} ${c.dim}(${conn.distance} ly)${c.reset}  ${c.dim}${conn.system_id}${c.reset}`);
+    }
 
-  // POI info
-  (r) => {
-    if (!r.id || !r.type || !r.system_id) return false;
-    console.log(`\n${c.bright}=== POI: ${r.name} ===${c.reset}`);
-    console.log(`ID: ${r.id}`);
-    console.log(`Type: ${r.type}`);
-    console.log(`System: ${r.system_id}`);
-    if (r.description) console.log(`Description: ${r.description}`);
+    const currentPoi = r.poi as Record<string, unknown> | undefined;
+    if (currentPoi) {
+      console.log(`\n${c.bright}Current POI:${c.reset} ${currentPoi.name} (${currentPoi.type})  ${c.dim}${currentPoi.id}${c.reset}`);
+    }
+    return true;
+  } },
+
+  // POI info — response wraps data under r.poi
+  { name: 'poi_info', hintKeys: ['poi', 'base', 'services'], format: (r) => {
+    const poi = r.poi as Record<string, unknown> | undefined;
+    if (!poi?.id || !poi.type || !poi.system_id) return false;
+    console.log(`\n${c.bright}=== POI: ${poi.name} ===${c.reset}`);
+    console.log(`ID: ${poi.id}`);
+    console.log(`Type: ${poi.type}`);
+    console.log(`System: ${poi.system_id}`);
+    if (poi.description) console.log(`Description: ${poi.description}`);
+    if (poi.class) console.log(`Class: ${poi.class}`);
 
     const resources = r.resources as Array<Record<string, unknown>> | undefined;
     if (resources?.length) {
       console.log(`\n${c.bright}Resources:${c.reset}`);
-      for (const res of resources)
-        console.log(`  - ${res.resource_id}: richness ${res.richness}, remaining ${res.remaining}`);
+      for (const res of resources) {
+        const display = res.remaining_display || `${res.remaining} remaining`;
+        if (display === 'depleted' || res.remaining === 0) {
+          // \x1b[9m = strikethrough
+          console.log(`  - \x1b[9m${c.dim}${res.name || res.resource_id}: richness ${res.richness}, depleted${c.reset}\x1b[29m`);
+        } else {
+          let depletion = '';
+          if (res.depletion_percent !== undefined) {
+            const pct = Number(res.depletion_percent);
+            const color = pct > 25 ? c.green : pct >= 5 ? c.yellow : c.red;
+            depletion = ` (${color}${pct.toFixed(2)}% remaining${c.reset})`;
+          }
+          const remaining = res.max_remaining ? `${res.remaining}/${res.max_remaining}` : display;
+          console.log(`  - ${res.name || res.resource_id}: richness ${res.richness}, ${remaining}${depletion}`);
+        }
+      }
     }
-    if (r.base_id) console.log(`\nBase: ${r.base_id} (use 'dock' to enter)`);
-    return true;
-  },
 
-  // Cargo
-  (r) => {
-    if (r.cargo === undefined || r.cargo_used === undefined) return false;
+    if (poi.base_id) console.log(`\nBase: ${poi.base_id} (use 'dock' to enter)`);
+
+    const base = r.base as Record<string, unknown> | undefined;
+    if (base) {
+      console.log(`\n${c.bright}Base: ${base.name}${c.reset}`);
+      if (base.description) console.log(`  ${base.description}`);
+      console.log(`  Empire: ${base.empire || 'None'}`);
+      console.log(`  Defense: ${base.defense_level}`);
+    }
+
+    const services = r.services as string[] | undefined;
+    if (services?.length) {
+      console.log(`\n${c.bright}Services:${c.reset} ${services.join(', ')}`);
+    }
+    return true;
+  } },
+
+  // Cargo — field renamed from cargo_used to used
+  { name: 'cargo', hintKeys: ['cargo', 'used', 'capacity'], format: (r) => {
+    if (r.cargo === undefined || r.used === undefined) return false;
     const cargo = (r.cargo as Array<Record<string, unknown>>) || [];
     console.log(`\n${c.bright}=== Cargo ===${c.reset}`);
-    console.log(`Used: ${r.cargo_used}/${r.cargo_capacity} (${r.cargo_available} available)`);
-    if (!cargo.length) {
-      console.log(`\n(Empty)`);
-    } else {
-      console.log('');
-      for (const item of cargo) {
-        const size = item.size ? ` (${item.size} each)` : '';
-        console.log(`  ${item.quantity}x ${item.name || item.item_id}${size}`);
-      }
-    }
+    console.log(`Used: ${r.used}/${r.capacity} (${r.available} available)\n`);
+    printItemTable(cargo);
     return true;
-  },
+  } },
 
-  // Nearby players
-  (r) => {
-    if (!Array.isArray(r.players)) return false;
-    const players = r.players as Array<Record<string, unknown>>;
-    console.log(`\n${c.bright}=== Nearby Players ===${c.reset}`);
+  // Nearby (players, pirates, empire NPCs)
+  { name: 'nearby', hintKeys: ['nearby', 'count', 'pirate_count'], format: (r) => {
+    if (!Array.isArray(r.nearby)) return false;
+    const players = r.nearby as Array<Record<string, unknown>>;
+    const pirates = (r.pirates as Array<Record<string, unknown>>) || [];
+    const npcs = (r.empire_npcs as Array<Record<string, unknown>>) || [];
+
+    console.log(`\n${c.bright}=== Nearby ===${c.reset}`);
+
+    // Players
+    console.log(`\n${c.bright}Players (${(r.count as number) || players.length}):${c.reset}`);
     if (!players.length) {
-      console.log(`(No other players at this location)`);
+      console.log(`  (No other players at this location)`);
     } else {
-      for (const p of players) {
-        const name = p.anonymous ? '[Anonymous]' : p.username;
-        const faction = p.faction_tag ? ` [${p.faction_tag}]` : '';
-        const status = p.status_message ? ` - "${p.status_message}"` : '';
+      for (const p of players) console.log(`  ${formatPlayer(p)}`);
+    }
+
+    // Pirates
+    if ((r.pirate_count as number) > 0) {
+      console.log(`\n${c.red}Pirates (${r.pirate_count}):${c.reset}`);
+      for (const p of pirates) {
+        const name = p.name || p.pirate_id || 'Unknown';
+        const ship = p.ship_class ? ` (${p.ship_class})` : '';
         const combat = p.in_combat ? ` ${c.red}[IN COMBAT]${c.reset}` : '';
-        console.log(`  ${name}${faction} (${p.ship_class})${status}${combat}`);
-        console.log(`    ID: ${p.player_id}`);
+        console.log(`  ${name}${ship}${combat}`);
       }
     }
+
+    // Empire NPCs
+    if ((r.empire_npc_count as number) > 0) {
+      console.log(`\n${c.dim}Empire NPCs (${r.empire_npc_count}):${c.reset}`);
+      for (const n of npcs) {
+        const name = n.name || n.npc_id || 'Unknown';
+        const ship = n.ship_class ? ` (${n.ship_class})` : '';
+        console.log(`  ${name}${ship}`);
+      }
+    }
+
     return true;
-  },
+  } },
 
   // Wrecks
-  (r) => {
+  { name: 'wrecks', hintKeys: ['wrecks'], format: (r) => {
     if (!Array.isArray(r.wrecks)) return false;
     const wrecks = r.wrecks as Array<Record<string, unknown>>;
     console.log(`\n${c.bright}=== Wrecks at POI ===${c.reset}`);
@@ -1355,10 +1472,10 @@ const resultFormatters: ResultFormatter[] = [
       }
     }
     return true;
-  },
+  } },
 
   // Skills (v2 format: player_skills array + skills metadata)
-  (r) => {
+  { name: 'skills_v2', hintKeys: ['skills', 'player_skills'], format: (r) => {
     if (r.skills === undefined || r.player_skills === undefined) return false;
     const playerSkills = (r.player_skills as Array<Record<string, unknown>>) || [];
     console.log(`\n${c.bright}=== Your Skills ===${c.reset}`);
@@ -1381,10 +1498,10 @@ const resultFormatters: ResultFormatter[] = [
       }
     }
     return true;
-  },
+  } },
 
   // Skills (v1 format: skills as object map of skill_id -> skill data)
-  (r) => {
+  { name: 'skills_v1', hintKeys: ['skills'], format: (r) => {
     if (!r.skills || typeof r.skills !== 'object' || Array.isArray(r.skills)) return false;
     const skills = r.skills as Record<
       string,
@@ -1420,10 +1537,10 @@ const resultFormatters: ResultFormatter[] = [
       }
     }
     return true;
-  },
+  } },
 
   // Ship listings (browse_ships) — must come before market listings since both use r.listings
-  (r) => {
+  { name: 'ship_listings', hintKeys: ['listings'], format: (r) => {
     if (!Array.isArray(r.listings)) return false;
     const listings = r.listings as Array<Record<string, unknown>>;
     if (listings.length === 0 || !listings[0].ship_id) return false;
@@ -1449,10 +1566,10 @@ const resultFormatters: ResultFormatter[] = [
       console.log(`  Listing ID: ${listing.listing_id}`);
     }
     return true;
-  },
+  } },
 
   // Market listings
-  (r) => {
+  { name: 'market_listings', hintKeys: ['listings'], format: (r) => {
     if (!Array.isArray(r.listings)) return false;
     const listings = r.listings as Array<Record<string, unknown>>;
     console.log(`\n${c.bright}=== Market Listings ===${c.reset}`);
@@ -1471,11 +1588,11 @@ const resultFormatters: ResultFormatter[] = [
       }
     }
     return true;
-  },
+  } },
 
   // Location info (get_location) — must come before simple message formatter since
   // the response has both r.location and r.message, which the simple formatter swallows
-  (r) => {
+  { name: 'location_info', hintKeys: ['location'], format: (r) => {
     if (!r.location || typeof r.location !== 'object') return false;
     const loc = r.location as {
       system_id: string;
@@ -1508,9 +1625,7 @@ const resultFormatters: ResultFormatter[] = [
     if (loc.nearby_player_count > 0) {
       console.log(`\n${c.bright}Nearby Players (${loc.nearby_player_count}):${c.reset}`);
       for (const player of loc.nearby_players.slice(0, 10)) {
-        const inCombat = player.in_combat ? ` ${c.red}[IN COMBAT]${c.reset}` : '';
-        const tag = player.faction_tag ? ` (${player.faction_tag})` : '';
-        console.log(`  ${player.username} — ${player.ship_class}${tag}${inCombat}`);
+        console.log(`  ${formatPlayer(player)}`);
       }
       if (loc.nearby_player_count > 10) {
         console.log(`  ... and ${loc.nearby_player_count - 10} more`);
@@ -1523,17 +1638,69 @@ const resultFormatters: ResultFormatter[] = [
       console.log(`\n${c.dim}Nearby NPCs: ${loc.nearby_empire_npc_count}${c.reset}`);
     }
     return true;
-  },
+  } },
+
+  // Arrival (travel/jump) — shows destination and online players
+  { name: 'arrival', hintKeys: ['poi_id', 'online_players'], format: (r) => {
+    if (!r.poi_id || !Array.isArray(r.online_players)) return false;
+    console.log(`\n${c.green}Arrived at ${c.bright}${r.poi || r.poi_id}${c.reset}`);
+    const players = r.online_players as Array<Record<string, unknown>>;
+    const count = (r.online_players_count as number) || players.length;
+    if (count > 0) {
+      console.log(`\n${c.bright}Players here (${count}):${c.reset}`);
+      for (const p of players) console.log(`  ${formatPlayer(p)}`);
+      if (r.online_players_truncated) console.log(`  ... and more`);
+    } else {
+      console.log(`\n(No other players here)`);
+    }
+    return true;
+  } },
+
+  // Station storage
+  { name: 'storage', hintKeys: ['base_id', 'items'], format: (r) => {
+    if (!r.base_id || !Array.isArray(r.items)) return false;
+    const items = r.items as Array<Record<string, unknown>>;
+    const ships = (r.ships as Array<Record<string, unknown>>) || [];
+    console.log(`\n${c.bright}=== Storage at ${r.base_id} ===${c.reset}\n`);
+    printItemTable(items);
+    if (ships.length) {
+      const nameW = Math.max(9, ...ships.map((s) => String(s.class_name || s.class_id || '').length));
+      const classW = Math.max(5, ...ships.map((s) => String(s.class_id || '').length));
+      const idW = Math.max(2, ...ships.map((s) => String(s.ship_id || '').length));
+      const modsW = Math.max(4, ...ships.map((s) => String(s.modules ?? '').length));
+      const cargoW = Math.max(5, ...ships.map((s) => String(s.cargo_used ?? '').length));
+      console.log(`\n${c.bright}Ships (${ships.length}):${c.reset}\n`);
+      console.log(`  ${'Ship Name'.padEnd(nameW)} | ${'Class'.padEnd(classW)} | ${'Mods'.padStart(modsW)} | ${'Cargo'.padStart(cargoW)} | ${'ID'.padEnd(idW)}`);
+      console.log(`  ${'-'.repeat(nameW)}-+-${'-'.repeat(classW)}-+-${'-'.repeat(modsW)}-+-${'-'.repeat(cargoW)}-+-${'-'.repeat(idW)}`);
+      for (const s of ships) {
+        const name = String(s.class_name || s.class_id || '').padEnd(nameW);
+        const cls = String(s.class_id || '').padEnd(classW);
+        const mods = String(s.modules ?? '').padStart(modsW);
+        const cargo = String(s.cargo_used ?? '').padStart(cargoW);
+        const id = String(s.ship_id || '').padEnd(idW);
+        console.log(`  ${name} | ${cls} | ${mods} | ${cargo} | ${id}`);
+      }
+    }
+    return true;
+  } },
+
+  // Chat confirmation
+  { name: 'chat_sent', hintKeys: ['channel', 'message', 'sent_at'], format: (r) => {
+    if (!r.channel || !r.message || !r.sent_at) return false;
+    const time = new Date(r.sent_at as string).toLocaleTimeString();
+    console.log(`${c.green}[${r.channel}]${c.reset} ${c.dim}${time}${c.reset} ${r.message}`);
+    return true;
+  } },
 
   // Simple message
-  (r) => {
+  { name: 'simple_message', hintKeys: ['message'], format: (r) => {
     if (!r.message || Object.keys(r).length > 2) return false;
     console.log(`${c.green}OK:${c.reset} ${r.message}`);
     return true;
-  },
+  } },
 ];
 
-function displayResult(_command: string, result?: Record<string, unknown>): void {
+function displayResult(command: string, result?: Record<string, unknown>): void {
   if (!result) return;
 
   // Show auto-dock/undock flags before the result
@@ -1543,7 +1710,20 @@ function displayResult(_command: string, result?: Record<string, unknown>): void
     console.log(`${c.cyan}[AUTO-UNDOCKED]${c.reset} Automatically undocked from station (cost 1 extra tick)`);
 
   for (const formatter of resultFormatters) {
-    if (formatter(result)) return;
+    if (formatter.format(result)) return;
+  }
+
+  // No formatter matched — check for possible drift (hint keys present but format failed)
+  const resultKeys = Object.keys(result);
+  const nearMisses = resultFormatters.filter(
+    (f) => f.hintKeys.length > 0 && f.hintKeys.every((k) => resultKeys.includes(k)),
+  );
+  if (nearMisses.length > 0) {
+    const names = nearMisses.map((f) => f.name).join(', ');
+    console.error(
+      `${c.yellow}[DRIFT WARNING]${c.reset} '${command}' response has keys matching formatter(s) [${names}] but none matched.` +
+        ` Response keys: [${resultKeys.join(', ')}]`,
+    );
   }
 
   // Default: print JSON
