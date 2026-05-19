@@ -225,6 +225,12 @@ const COMMANDS: Record<string, CommandConfig> = {
     required: ['ship_id'],
     usage: '<ship_id>  (switch to a stored ship at current base, use list_ships to see)',
   },
+  refit_ship: {},
+  scrap_ship: {
+    args: ['ship_id'],
+    required: ['ship_id'],
+    usage: '<ship_id>  (permanently destroy a stored ship, no credits; cargo/modules go to storage)',
+  },
   install_mod: {
     args: ['module_id'],
     required: ['module_id'],
@@ -279,8 +285,27 @@ const COMMANDS: Record<string, CommandConfig> = {
   faction_list: { args: ['limit', 'offset'] },
   faction_get_invites: {},
   faction_decline_invite: { args: ['faction_id'] },
-  faction_set_ally: { args: ['target_faction_id'] },
   faction_set_enemy: { args: ['target_faction_id'] },
+  faction_remove_enemy: {
+    args: ['target_faction_id'],
+    required: ['target_faction_id'],
+    usage: '<target_faction_id>  (return an enemy faction to neutral standing)',
+  },
+  faction_propose_ally: {
+    args: ['target_faction_id'],
+    required: ['target_faction_id'],
+    usage: '<target_faction_id>  (propose a mutual alliance)',
+  },
+  faction_accept_ally: {
+    args: ['target_faction_id'],
+    required: ['target_faction_id'],
+    usage: '<target_faction_id>  (accept a pending alliance proposal)',
+  },
+  faction_remove_ally: {
+    args: ['target_faction_id'],
+    required: ['target_faction_id'],
+    usage: '<target_faction_id>  (dissolve an alliance)',
+  },
   faction_declare_war: { args: ['target_faction_id', 'reason'] },
   faction_propose_peace: { args: ['target_faction_id', 'terms'] },
   faction_accept_peace: { args: ['target_faction_id'] },
@@ -336,12 +361,18 @@ const COMMANDS: Record<string, CommandConfig> = {
   create_note: { args: ['title', { rest: 'content' }] },
   write_note: { args: ['note_id', { rest: 'content' }] },
   read_note: { args: ['note_id'] },
+  delete_note: { args: ['note_id'], required: ['note_id'], usage: '<note_id>  (permanently delete a note you own)' },
   get_notes: {},
 
   // Captain's log
   captains_log_add: { args: [{ rest: 'entry' }] },
   captains_log_list: { args: ['index'] },
   captains_log_get: { args: ['index'] },
+  captains_log_delete: {
+    args: ['index'],
+    required: ['index'],
+    usage: '<index>  (delete log entry by index; 0 = newest, entries re-index after)',
+  },
 
   // Forum
   forum_list: { args: ['page', 'category'] },
@@ -479,6 +510,20 @@ const COMMANDS: Record<string, CommandConfig> = {
   buy_insurance: { args: ['ticks'], required: ['ticks'], usage: '<ticks>  (number of ticks of coverage)' },
   get_insurance_quote: {},
   claim_insurance: {},
+  view_insurance: {},
+
+  // Empire / governance
+  citizenship: {
+    args: ['action', 'empire_id'],
+    usage: '[action=list|apply|renounce|withdraw] [empire_id]  (manage empire citizenships; default action=list)',
+  },
+  get_empire_info: { args: ['empire_id'], usage: '[empire_id]  (omit for all five empires)' },
+  get_tax_estimate: {},
+  petition: {
+    args: ['empire_id', { rest: 'message' }],
+    required: ['empire_id', 'message'],
+    usage: '<empire_id> <message>  (petition empire leadership, max 1000 chars)',
+  },
 
   // Drones
   deploy_drone: { args: ['drone_type'], required: ['drone_type'], usage: '<drone_type>  (deploy an offensive drone)' },
@@ -487,6 +532,23 @@ const COMMANDS: Record<string, CommandConfig> = {
     args: ['drone_id', 'order', 'target_id'],
     required: ['drone_id', 'order'],
     usage: '<drone_id> <order> [target_id]  (give drone orders)',
+  },
+  get_drones: {},
+  get_drone: { args: ['drone_id'], required: ['drone_id'], usage: '<drone_id>  (full details incl. script and memory)' },
+  load_drone: {
+    args: ['item_id'],
+    required: ['item_id'],
+    usage: '<item_id>  (load a drone from cargo into your bay, e.g. combat_drone, mining_drone)',
+  },
+  unload_drone: {
+    args: ['drone_id'],
+    required: ['drone_id'],
+    usage: '<drone_id>  (return a bay drone to cargo, must not be deployed)',
+  },
+  upload_drone_script: {
+    args: ['drone_id', { rest: 'script' }],
+    required: ['drone_id', 'script'],
+    usage: '<drone_id> <script>  (DroneLang source, max 2000 chars; empty string clears)',
   },
 
   // Query commands
@@ -497,6 +559,7 @@ const COMMANDS: Record<string, CommandConfig> = {
   get_ship: {},
   get_cargo: {},
   get_nearby: {},
+  get_system_agents: {},
   get_skills: {},
   get_map: { args: ['system_id'] },
   get_trades: {},
@@ -1936,6 +1999,19 @@ ${c.bright}Action Commands (1 per tick, ~10 seconds):${c.reset}
     buy_insurance <ticks>     Purchase ship insurance
     get_insurance_quote       Get insurance pricing
     claim_insurance           File insurance claim
+
+  ${c.cyan}Drones:${c.reset}
+    get_drones                List bay and deployed drones
+    get_drone <drone_id>      Drone details (script, memory)
+    load_drone <item_id>      Load a drone from cargo into the bay
+    unload_drone <drone_id>   Return a bay drone to cargo
+    upload_drone_script <id> <script>  Program a drone (DroneLang)
+
+  ${c.cyan}Empire & Governance:${c.reset}
+    get_empire_info [empire]  Empire policy snapshot (all if omitted)
+    citizenship [action]      Manage citizenships (list/apply/renounce/withdraw)
+    petition <empire> <msg>   Petition empire leadership
+    get_tax_estimate          Preview taxes you'd owe now
 
   ${c.cyan}Social:${c.reset}
     chat <channel> <message>  Send chat (local/system/faction)

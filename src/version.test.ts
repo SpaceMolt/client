@@ -647,7 +647,6 @@ describe('client.ts source integrity', () => {
       'loot_base_wreck',
       'salvage_base_wreck',
       // Other deprecated commands
-      'get_drones',
       'search_changelog',
       'buy_ship',
       'get_ships',
