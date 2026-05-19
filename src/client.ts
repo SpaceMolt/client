@@ -534,7 +534,11 @@ const COMMANDS: Record<string, CommandConfig> = {
     usage: '<drone_id> <order> [target_id]  (give drone orders)',
   },
   get_drones: {},
-  get_drone: { args: ['drone_id'], required: ['drone_id'], usage: '<drone_id>  (full details incl. script and memory)' },
+  get_drone: {
+    args: ['drone_id'],
+    required: ['drone_id'],
+    usage: '<drone_id>  (full details incl. script and memory)',
+  },
   load_drone: {
     args: ['item_id'],
     required: ['item_id'],
@@ -1312,455 +1316,528 @@ interface NamedFormatter {
 
 const resultFormatters: NamedFormatter[] = [
   // Player status
-  { name: 'player_status', hintKeys: ['player', 'ship'], format:
-  (r) => {
-    if (!r.player || !r.ship) return false;
-    const p = r.player as Record<string, unknown>;
-    const s = r.ship as Record<string, unknown>;
-    const sys = r.system as Record<string, unknown> | undefined;
-    const poi = r.poi as Record<string, unknown> | undefined;
+  {
+    name: 'player_status',
+    hintKeys: ['player', 'ship'],
+    format: (r) => {
+      if (!r.player || !r.ship) return false;
+      const p = r.player as Record<string, unknown>;
+      const s = r.ship as Record<string, unknown>;
+      const sys = r.system as Record<string, unknown> | undefined;
+      const poi = r.poi as Record<string, unknown> | undefined;
 
-    console.log(`\n${c.bright}=== Player Status ===${c.reset}`);
-    console.log(`Username: ${c.bright}${p.username}${c.reset}`);
-    console.log(`Empire: ${p.empire}`);
-    console.log(`Credits: ${p.credits}`);
-    console.log(`Faction: ${p.faction_id ? `${p.faction_id} (${p.faction_rank})` : 'None'}`);
+      console.log(`\n${c.bright}=== Player Status ===${c.reset}`);
+      console.log(`Username: ${c.bright}${p.username}${c.reset}`);
+      console.log(`Empire: ${p.empire}`);
+      console.log(`Credits: ${p.credits}`);
+      console.log(`Faction: ${p.faction_id ? `${p.faction_id} (${p.faction_rank})` : 'None'}`);
 
-    console.log(`\n${c.bright}Location:${c.reset}`);
-    console.log(`  System: ${sys?.name || p.current_system}`);
-    console.log(`  POI: ${poi?.name || p.current_poi}`);
-    console.log(`  Docked: ${p.docked_at_base ? `Yes (${p.docked_at_base})` : 'No'}`);
-    if (p.is_cloaked) console.log(`  ${c.cyan}[CLOAKED]${c.reset}`);
+      console.log(`\n${c.bright}Location:${c.reset}`);
+      console.log(`  System: ${sys?.name || p.current_system}`);
+      console.log(`  POI: ${poi?.name || p.current_poi}`);
+      console.log(`  Docked: ${p.docked_at_base ? `Yes (${p.docked_at_base})` : 'No'}`);
+      if (p.is_cloaked) console.log(`  ${c.cyan}[CLOAKED]${c.reset}`);
 
-    console.log(`\n${c.bright}Ship: ${s.name}${c.reset} (${s.class_id})`);
-    console.log(`  Hull: ${s.hull}/${s.max_hull}`);
-    console.log(`  Shield: ${s.shield}/${s.max_shield} (+${s.shield_recharge}/tick)`);
-    console.log(`  Armor: ${s.armor || 0}`);
-    console.log(`  Fuel: ${s.fuel}/${s.max_fuel}`);
-    console.log(`  Cargo: ${s.cargo_used}/${s.cargo_capacity}`);
-    console.log(`  CPU: ${s.cpu_used}/${s.cpu_capacity}`);
-    console.log(`  Power: ${s.power_used}/${s.power_capacity}`);
+      console.log(`\n${c.bright}Ship: ${s.name}${c.reset} (${s.class_id})`);
+      console.log(`  Hull: ${s.hull}/${s.max_hull}`);
+      console.log(`  Shield: ${s.shield}/${s.max_shield} (+${s.shield_recharge}/tick)`);
+      console.log(`  Armor: ${s.armor || 0}`);
+      console.log(`  Fuel: ${s.fuel}/${s.max_fuel}`);
+      console.log(`  Cargo: ${s.cargo_used}/${s.cargo_capacity}`);
+      console.log(`  CPU: ${s.cpu_used}/${s.cpu_capacity}`);
+      console.log(`  Power: ${s.power_used}/${s.power_capacity}`);
 
-    if (s.class_id === 'escape_pod') {
-      console.log(`\n${c.yellow}WARNING: You are in an Escape Pod!${c.reset}`);
-      console.log(`  - No cargo capacity, no weapons, no defenses`);
-      console.log(`  - Infinite fuel - travel anywhere`);
-      console.log(`  - Get to a station and commission or buy a ship with 'commission_ship' or 'browse_ships'`);
-    }
-
-    if (r.travel_progress !== undefined) {
-      const progress = Math.round((r.travel_progress as number) * 100);
-      console.log(
-        `\n${c.cyan}[TRAVELING]${c.reset} ${progress}% to ${r.travel_destination || 'unknown'} (arrival tick: ${r.travel_arrival_tick || '?'})`,
-      );
-    }
-
-    const nearby = r.nearby as Array<Record<string, unknown>> | undefined;
-    if (nearby?.length) {
-      console.log(`\n${c.bright}Nearby Players:${c.reset} ${nearby.length}`);
-      for (const player of nearby.slice(0, 5)) {
-        const name = player.anonymous ? '[Anonymous]' : player.username;
-        const status = player.in_combat ? ` ${c.red}[COMBAT]${c.reset}` : '';
-        console.log(`  - ${name} (${player.ship_class})${status}`);
+      if (s.class_id === 'escape_pod') {
+        console.log(`\n${c.yellow}WARNING: You are in an Escape Pod!${c.reset}`);
+        console.log(`  - No cargo capacity, no weapons, no defenses`);
+        console.log(`  - Infinite fuel - travel anywhere`);
+        console.log(`  - Get to a station and commission or buy a ship with 'commission_ship' or 'browse_ships'`);
       }
-      if (nearby.length > 5) console.log(`  ... and ${nearby.length - 5} more`);
-    }
-    return true;
-  } },
+
+      if (r.travel_progress !== undefined) {
+        const progress = Math.round((r.travel_progress as number) * 100);
+        console.log(
+          `\n${c.cyan}[TRAVELING]${c.reset} ${progress}% to ${r.travel_destination || 'unknown'} (arrival tick: ${r.travel_arrival_tick || '?'})`,
+        );
+      }
+
+      const nearby = r.nearby as Array<Record<string, unknown>> | undefined;
+      if (nearby?.length) {
+        console.log(`\n${c.bright}Nearby Players:${c.reset} ${nearby.length}`);
+        for (const player of nearby.slice(0, 5)) {
+          const name = player.anonymous ? '[Anonymous]' : player.username;
+          const status = player.in_combat ? ` ${c.red}[COMBAT]${c.reset}` : '';
+          console.log(`  - ${name} (${player.ship_class})${status}`);
+        }
+        if (nearby.length > 5) console.log(`  ... and ${nearby.length - 5} more`);
+      }
+      return true;
+    },
+  },
 
   // Registration
-  { name: 'registration', hintKeys: ['password', 'player_id'], format: (r) => {
-    if (!r.password || !r.player_id) return false;
-    console.log(`\n${c.green}${c.bright}=== Registration Successful ===${c.reset}`);
-    console.log(`Player ID: ${r.player_id}`);
-    console.log(`\n${c.yellow}${c.bright}PASSWORD: ${r.password}${c.reset}`);
-    console.log(`\n${c.red}${c.bright}CRITICAL: Save this password immediately!${c.reset}`);
-    console.log(`If lost, the account owner can reset it at https://spacemolt.com/dashboard`);
-    console.log(`\nYou are now logged in. Try these commands:`);
-    console.log(`  get_status    - See your ship and location`);
-    console.log(`  undock        - Leave the station`);
-    console.log(`  mine          - Mine resources (at asteroid belts)`);
-    console.log(`  help          - Get full command list from server`);
-    return true;
-  } },
+  {
+    name: 'registration',
+    hintKeys: ['password', 'player_id'],
+    format: (r) => {
+      if (!r.password || !r.player_id) return false;
+      console.log(`\n${c.green}${c.bright}=== Registration Successful ===${c.reset}`);
+      console.log(`Player ID: ${r.player_id}`);
+      console.log(`\n${c.yellow}${c.bright}PASSWORD: ${r.password}${c.reset}`);
+      console.log(`\n${c.red}${c.bright}CRITICAL: Save this password immediately!${c.reset}`);
+      console.log(`If lost, the account owner can reset it at https://spacemolt.com/dashboard`);
+      console.log(`\nYou are now logged in. Try these commands:`);
+      console.log(`  get_status    - See your ship and location`);
+      console.log(`  undock        - Leave the station`);
+      console.log(`  mine          - Mine resources (at asteroid belts)`);
+      console.log(`  help          - Get full command list from server`);
+      return true;
+    },
+  },
 
   // System info — response wraps data under r.system
-  { name: 'system_info', hintKeys: ['system', 'poi', 'security_status'], format: (r) => {
-    const sys = r.system as Record<string, unknown> | undefined;
-    if (!sys?.id || !sys.pois || !sys.connections) return false;
-    console.log(`\n${c.bright}=== System: ${sys.name} ===${c.reset}`);
-    console.log(`ID: ${sys.id}`);
-    console.log(`Empire: ${sys.empire || 'None'}`);
-    console.log(`Police Level: ${sys.police_level} (${r.security_status || sys.security_status || 'unknown security'})`);
-    if (sys.description) console.log(`Description: ${sys.description}`);
+  {
+    name: 'system_info',
+    hintKeys: ['system', 'poi', 'security_status'],
+    format: (r) => {
+      const sys = r.system as Record<string, unknown> | undefined;
+      if (!sys?.id || !sys.pois || !sys.connections) return false;
+      console.log(`\n${c.bright}=== System: ${sys.name} ===${c.reset}`);
+      console.log(`ID: ${sys.id}`);
+      console.log(`Empire: ${sys.empire || 'None'}`);
+      console.log(
+        `Police Level: ${sys.police_level} (${r.security_status || sys.security_status || 'unknown security'})`,
+      );
+      if (sys.description) console.log(`Description: ${sys.description}`);
 
-    const pois = sys.pois as Array<Record<string, unknown>>;
-    console.log(`\n${c.bright}Points of Interest:${c.reset}`);
-    for (const poi of pois) {
-      const online = (poi.online as number) > 0 ? ` ${c.cyan}(${poi.online} online)${c.reset}` : '';
-      const base = poi.has_base ? ` ${c.green}[base]${c.reset}` : '';
-      console.log(`  - ${poi.name} (${poi.type})${base}${online}  ${c.dim}${poi.id}${c.reset}`);
-    }
+      const pois = sys.pois as Array<Record<string, unknown>>;
+      console.log(`\n${c.bright}Points of Interest:${c.reset}`);
+      for (const poi of pois) {
+        const online = (poi.online as number) > 0 ? ` ${c.cyan}(${poi.online} online)${c.reset}` : '';
+        const base = poi.has_base ? ` ${c.green}[base]${c.reset}` : '';
+        console.log(`  - ${poi.name} (${poi.type})${base}${online}  ${c.dim}${poi.id}${c.reset}`);
+      }
 
-    const connections = sys.connections as Array<Record<string, unknown>>;
-    console.log(`\n${c.bright}Connected Systems:${c.reset}`);
-    for (const conn of connections) {
-      console.log(`  - ${conn.name} ${c.dim}(${conn.distance} ly)${c.reset}  ${c.dim}${conn.system_id}${c.reset}`);
-    }
+      const connections = sys.connections as Array<Record<string, unknown>>;
+      console.log(`\n${c.bright}Connected Systems:${c.reset}`);
+      for (const conn of connections) {
+        console.log(`  - ${conn.name} ${c.dim}(${conn.distance} ly)${c.reset}  ${c.dim}${conn.system_id}${c.reset}`);
+      }
 
-    const currentPoi = r.poi as Record<string, unknown> | undefined;
-    if (currentPoi) {
-      console.log(`\n${c.bright}Current POI:${c.reset} ${currentPoi.name} (${currentPoi.type})  ${c.dim}${currentPoi.id}${c.reset}`);
-    }
-    return true;
-  } },
+      const currentPoi = r.poi as Record<string, unknown> | undefined;
+      if (currentPoi) {
+        console.log(
+          `\n${c.bright}Current POI:${c.reset} ${currentPoi.name} (${currentPoi.type})  ${c.dim}${currentPoi.id}${c.reset}`,
+        );
+      }
+      return true;
+    },
+  },
 
   // POI info — response wraps data under r.poi
-  { name: 'poi_info', hintKeys: ['poi', 'base', 'services'], format: (r) => {
-    const poi = r.poi as Record<string, unknown> | undefined;
-    if (!poi?.id || !poi.type || !poi.system_id) return false;
-    console.log(`\n${c.bright}=== POI: ${poi.name} ===${c.reset}`);
-    console.log(`ID: ${poi.id}`);
-    console.log(`Type: ${poi.type}`);
-    console.log(`System: ${poi.system_id}`);
-    if (poi.description) console.log(`Description: ${poi.description}`);
-    if (poi.class) console.log(`Class: ${poi.class}`);
+  {
+    name: 'poi_info',
+    hintKeys: ['poi', 'base', 'services'],
+    format: (r) => {
+      const poi = r.poi as Record<string, unknown> | undefined;
+      if (!poi?.id || !poi.type || !poi.system_id) return false;
+      console.log(`\n${c.bright}=== POI: ${poi.name} ===${c.reset}`);
+      console.log(`ID: ${poi.id}`);
+      console.log(`Type: ${poi.type}`);
+      console.log(`System: ${poi.system_id}`);
+      if (poi.description) console.log(`Description: ${poi.description}`);
+      if (poi.class) console.log(`Class: ${poi.class}`);
 
-    const resources = r.resources as Array<Record<string, unknown>> | undefined;
-    if (resources?.length) {
-      console.log(`\n${c.bright}Resources:${c.reset}`);
-      for (const res of resources) {
-        const display = res.remaining_display || `${res.remaining} remaining`;
-        if (display === 'depleted' || res.remaining === 0) {
-          // \x1b[9m = strikethrough
-          console.log(`  - \x1b[9m${c.dim}${res.name || res.resource_id}: richness ${res.richness}, depleted${c.reset}\x1b[29m`);
-        } else {
-          let depletion = '';
-          if (res.depletion_percent !== undefined) {
-            const pct = Number(res.depletion_percent);
-            const color = pct > 25 ? c.green : pct >= 5 ? c.yellow : c.red;
-            depletion = ` (${color}${pct.toFixed(2)}% remaining${c.reset})`;
+      const resources = r.resources as Array<Record<string, unknown>> | undefined;
+      if (resources?.length) {
+        console.log(`\n${c.bright}Resources:${c.reset}`);
+        for (const res of resources) {
+          const display = res.remaining_display || `${res.remaining} remaining`;
+          if (display === 'depleted' || res.remaining === 0) {
+            // \x1b[9m = strikethrough
+            console.log(
+              `  - \x1b[9m${c.dim}${res.name || res.resource_id}: richness ${res.richness}, depleted${c.reset}\x1b[29m`,
+            );
+          } else {
+            let depletion = '';
+            if (res.depletion_percent !== undefined) {
+              const pct = Number(res.depletion_percent);
+              const color = pct > 25 ? c.green : pct >= 5 ? c.yellow : c.red;
+              depletion = ` (${color}${pct.toFixed(2)}% remaining${c.reset})`;
+            }
+            const remaining = res.max_remaining ? `${res.remaining}/${res.max_remaining}` : display;
+            console.log(`  - ${res.name || res.resource_id}: richness ${res.richness}, ${remaining}${depletion}`);
           }
-          const remaining = res.max_remaining ? `${res.remaining}/${res.max_remaining}` : display;
-          console.log(`  - ${res.name || res.resource_id}: richness ${res.richness}, ${remaining}${depletion}`);
         }
       }
-    }
 
-    if (poi.base_id) console.log(`\nBase: ${poi.base_id} (use 'dock' to enter)`);
+      if (poi.base_id) console.log(`\nBase: ${poi.base_id} (use 'dock' to enter)`);
 
-    const base = r.base as Record<string, unknown> | undefined;
-    if (base) {
-      console.log(`\n${c.bright}Base: ${base.name}${c.reset}`);
-      if (base.description) console.log(`  ${base.description}`);
-      console.log(`  Empire: ${base.empire || 'None'}`);
-      console.log(`  Defense: ${base.defense_level}`);
-    }
+      const base = r.base as Record<string, unknown> | undefined;
+      if (base) {
+        console.log(`\n${c.bright}Base: ${base.name}${c.reset}`);
+        if (base.description) console.log(`  ${base.description}`);
+        console.log(`  Empire: ${base.empire || 'None'}`);
+        console.log(`  Defense: ${base.defense_level}`);
+      }
 
-    const services = r.services as string[] | undefined;
-    if (services?.length) {
-      console.log(`\n${c.bright}Services:${c.reset} ${services.join(', ')}`);
-    }
-    return true;
-  } },
+      const services = r.services as string[] | undefined;
+      if (services?.length) {
+        console.log(`\n${c.bright}Services:${c.reset} ${services.join(', ')}`);
+      }
+      return true;
+    },
+  },
 
   // Cargo — field renamed from cargo_used to used
-  { name: 'cargo', hintKeys: ['cargo', 'used', 'capacity'], format: (r) => {
-    if (r.cargo === undefined || r.used === undefined) return false;
-    const cargo = (r.cargo as Array<Record<string, unknown>>) || [];
-    console.log(`\n${c.bright}=== Cargo ===${c.reset}`);
-    console.log(`Used: ${r.used}/${r.capacity} (${r.available} available)\n`);
-    printItemTable(cargo);
-    return true;
-  } },
+  {
+    name: 'cargo',
+    hintKeys: ['cargo', 'used', 'capacity'],
+    format: (r) => {
+      if (r.cargo === undefined || r.used === undefined) return false;
+      const cargo = (r.cargo as Array<Record<string, unknown>>) || [];
+      console.log(`\n${c.bright}=== Cargo ===${c.reset}`);
+      console.log(`Used: ${r.used}/${r.capacity} (${r.available} available)\n`);
+      printItemTable(cargo);
+      return true;
+    },
+  },
 
   // Nearby (players, pirates, empire NPCs)
-  { name: 'nearby', hintKeys: ['nearby', 'count', 'pirate_count'], format: (r) => {
-    if (!Array.isArray(r.nearby)) return false;
-    const players = r.nearby as Array<Record<string, unknown>>;
-    const pirates = (r.pirates as Array<Record<string, unknown>>) || [];
-    const npcs = (r.empire_npcs as Array<Record<string, unknown>>) || [];
+  {
+    name: 'nearby',
+    hintKeys: ['nearby', 'count', 'pirate_count'],
+    format: (r) => {
+      if (!Array.isArray(r.nearby)) return false;
+      const players = r.nearby as Array<Record<string, unknown>>;
+      const pirates = (r.pirates as Array<Record<string, unknown>>) || [];
+      const npcs = (r.empire_npcs as Array<Record<string, unknown>>) || [];
 
-    console.log(`\n${c.bright}=== Nearby ===${c.reset}`);
+      console.log(`\n${c.bright}=== Nearby ===${c.reset}`);
 
-    // Players
-    console.log(`\n${c.bright}Players (${(r.count as number) || players.length}):${c.reset}`);
-    if (!players.length) {
-      console.log(`  (No other players at this location)`);
-    } else {
-      for (const p of players) console.log(`  ${formatPlayer(p)}`);
-    }
-
-    // Pirates
-    if ((r.pirate_count as number) > 0) {
-      console.log(`\n${c.red}Pirates (${r.pirate_count}):${c.reset}`);
-      for (const p of pirates) {
-        const name = p.name || p.pirate_id || 'Unknown';
-        const ship = p.ship_class ? ` (${p.ship_class})` : '';
-        const combat = p.in_combat ? ` ${c.red}[IN COMBAT]${c.reset}` : '';
-        console.log(`  ${name}${ship}${combat}`);
+      // Players
+      console.log(`\n${c.bright}Players (${(r.count as number) || players.length}):${c.reset}`);
+      if (!players.length) {
+        console.log(`  (No other players at this location)`);
+      } else {
+        for (const p of players) console.log(`  ${formatPlayer(p)}`);
       }
-    }
 
-    // Empire NPCs
-    if ((r.empire_npc_count as number) > 0) {
-      console.log(`\n${c.dim}Empire NPCs (${r.empire_npc_count}):${c.reset}`);
-      for (const n of npcs) {
-        const name = n.name || n.npc_id || 'Unknown';
-        const ship = n.ship_class ? ` (${n.ship_class})` : '';
-        console.log(`  ${name}${ship}`);
-      }
-    }
-
-    return true;
-  } },
-
-  // Wrecks
-  { name: 'wrecks', hintKeys: ['wrecks'], format: (r) => {
-    if (!Array.isArray(r.wrecks)) return false;
-    const wrecks = r.wrecks as Array<Record<string, unknown>>;
-    console.log(`\n${c.bright}=== Wrecks at POI ===${c.reset}`);
-    if (!wrecks.length) {
-      console.log(`(No wrecks at this location)`);
-    } else {
-      for (const w of wrecks) {
-        console.log(`\n${c.yellow}Wreck: ${w.wreck_id}${c.reset}`);
-        console.log(`  Ship: ${w.ship_class}`);
-        console.log(`  Expires in: ${w.ticks_remaining} ticks`);
-        const items = (w.items as Array<Record<string, unknown>>) || [];
-        if (items.length) {
-          console.log(`  Contents:`);
-          for (const item of items) console.log(`    - ${item.quantity}x ${item.item_id}`);
+      // Pirates
+      if ((r.pirate_count as number) > 0) {
+        console.log(`\n${c.red}Pirates (${r.pirate_count}):${c.reset}`);
+        for (const p of pirates) {
+          const name = p.name || p.pirate_id || 'Unknown';
+          const ship = p.ship_class ? ` (${p.ship_class})` : '';
+          const combat = p.in_combat ? ` ${c.red}[IN COMBAT]${c.reset}` : '';
+          console.log(`  ${name}${ship}${combat}`);
         }
       }
-    }
-    return true;
-  } },
+
+      // Empire NPCs
+      if ((r.empire_npc_count as number) > 0) {
+        console.log(`\n${c.dim}Empire NPCs (${r.empire_npc_count}):${c.reset}`);
+        for (const n of npcs) {
+          const name = n.name || n.npc_id || 'Unknown';
+          const ship = n.ship_class ? ` (${n.ship_class})` : '';
+          console.log(`  ${name}${ship}`);
+        }
+      }
+
+      return true;
+    },
+  },
+
+  // Wrecks
+  {
+    name: 'wrecks',
+    hintKeys: ['wrecks'],
+    format: (r) => {
+      if (!Array.isArray(r.wrecks)) return false;
+      const wrecks = r.wrecks as Array<Record<string, unknown>>;
+      console.log(`\n${c.bright}=== Wrecks at POI ===${c.reset}`);
+      if (!wrecks.length) {
+        console.log(`(No wrecks at this location)`);
+      } else {
+        for (const w of wrecks) {
+          console.log(`\n${c.yellow}Wreck: ${w.wreck_id}${c.reset}`);
+          console.log(`  Ship: ${w.ship_class}`);
+          console.log(`  Expires in: ${w.ticks_remaining} ticks`);
+          const items = (w.items as Array<Record<string, unknown>>) || [];
+          if (items.length) {
+            console.log(`  Contents:`);
+            for (const item of items) console.log(`    - ${item.quantity}x ${item.item_id}`);
+          }
+        }
+      }
+      return true;
+    },
+  },
 
   // Skills (v2 format: player_skills array + skills metadata)
-  { name: 'skills_v2', hintKeys: ['skills', 'player_skills'], format: (r) => {
-    if (r.skills === undefined || r.player_skills === undefined) return false;
-    const playerSkills = (r.player_skills as Array<Record<string, unknown>>) || [];
-    console.log(`\n${c.bright}=== Your Skills ===${c.reset}`);
-    console.log(`Total skills: ${r.player_skill_count || playerSkills.length}`);
-    if (!playerSkills.length) {
-      console.log(`\n(No skills trained yet - perform activities to gain XP)`);
-    } else {
-      const byCategory: Record<string, Array<Record<string, unknown>>> = {};
-      for (const skill of playerSkills) {
-        const cat = (skill.category as string) || 'Other';
-        if (!byCategory[cat]) byCategory[cat] = [];
-        byCategory[cat].push(skill);
+  {
+    name: 'skills_v2',
+    hintKeys: ['skills', 'player_skills'],
+    format: (r) => {
+      if (r.skills === undefined || r.player_skills === undefined) return false;
+      const playerSkills = (r.player_skills as Array<Record<string, unknown>>) || [];
+      console.log(`\n${c.bright}=== Your Skills ===${c.reset}`);
+      console.log(`Total skills: ${r.player_skill_count || playerSkills.length}`);
+      if (!playerSkills.length) {
+        console.log(`\n(No skills trained yet - perform activities to gain XP)`);
+      } else {
+        const byCategory: Record<string, Array<Record<string, unknown>>> = {};
+        for (const skill of playerSkills) {
+          const cat = (skill.category as string) || 'Other';
+          if (!byCategory[cat]) byCategory[cat] = [];
+          byCategory[cat].push(skill);
+        }
+        for (const [category, skills] of Object.entries(byCategory)) {
+          console.log(`\n${c.cyan}${category}:${c.reset}`);
+          for (const skill of skills) {
+            const progress = skill.next_level_xp ? ` (${skill.current_xp}/${skill.next_level_xp} XP)` : ' (MAX)';
+            console.log(`  ${skill.name}: Level ${skill.level}/${skill.max_level}${progress}`);
+          }
+        }
       }
-      for (const [category, skills] of Object.entries(byCategory)) {
+      return true;
+    },
+  },
+
+  // Skills (v1 format: skills as object map of skill_id -> skill data)
+  {
+    name: 'skills_v1',
+    hintKeys: ['skills'],
+    format: (r) => {
+      if (!r.skills || typeof r.skills !== 'object' || Array.isArray(r.skills)) return false;
+      const skills = r.skills as Record<
+        string,
+        {
+          name: string;
+          category: string;
+          level: number;
+          max_level: number;
+          xp: number;
+          next_level_xp?: number;
+        }
+      >;
+      const skillEntries = Object.entries(skills);
+      if (skillEntries.length === 0) return false;
+      // Verify this looks like a skills map (entries should have name/level)
+      if (!skillEntries[0][1].name || skillEntries[0][1].level === undefined) return false;
+      console.log(`\n${c.bright}=== Your Skills ===${c.reset}`);
+      const byCategory: Record<string, typeof skillEntries> = {};
+      for (const [skillId, skill] of skillEntries) {
+        const cat = skill.category || 'Other';
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push([skillId, skill]);
+      }
+      for (const [category, entries] of Object.entries(byCategory)) {
         console.log(`\n${c.cyan}${category}:${c.reset}`);
-        for (const skill of skills) {
-          const progress = skill.next_level_xp ? ` (${skill.current_xp}/${skill.next_level_xp} XP)` : ' (MAX)';
+        for (const [, skill] of entries) {
+          const progress = skill.next_level_xp
+            ? ` (${skill.xp}/${skill.next_level_xp} XP to level ${skill.level + 1})`
+            : skill.level >= skill.max_level
+              ? ' (MAX)'
+              : ` (${skill.xp} XP)`;
           console.log(`  ${skill.name}: Level ${skill.level}/${skill.max_level}${progress}`);
         }
       }
-    }
-    return true;
-  } },
-
-  // Skills (v1 format: skills as object map of skill_id -> skill data)
-  { name: 'skills_v1', hintKeys: ['skills'], format: (r) => {
-    if (!r.skills || typeof r.skills !== 'object' || Array.isArray(r.skills)) return false;
-    const skills = r.skills as Record<
-      string,
-      {
-        name: string;
-        category: string;
-        level: number;
-        max_level: number;
-        xp: number;
-        next_level_xp?: number;
-      }
-    >;
-    const skillEntries = Object.entries(skills);
-    if (skillEntries.length === 0) return false;
-    // Verify this looks like a skills map (entries should have name/level)
-    if (!skillEntries[0][1].name || skillEntries[0][1].level === undefined) return false;
-    console.log(`\n${c.bright}=== Your Skills ===${c.reset}`);
-    const byCategory: Record<string, typeof skillEntries> = {};
-    for (const [skillId, skill] of skillEntries) {
-      const cat = skill.category || 'Other';
-      if (!byCategory[cat]) byCategory[cat] = [];
-      byCategory[cat].push([skillId, skill]);
-    }
-    for (const [category, entries] of Object.entries(byCategory)) {
-      console.log(`\n${c.cyan}${category}:${c.reset}`);
-      for (const [, skill] of entries) {
-        const progress = skill.next_level_xp
-          ? ` (${skill.xp}/${skill.next_level_xp} XP to level ${skill.level + 1})`
-          : skill.level >= skill.max_level
-            ? ' (MAX)'
-            : ` (${skill.xp} XP)`;
-        console.log(`  ${skill.name}: Level ${skill.level}/${skill.max_level}${progress}`);
-      }
-    }
-    return true;
-  } },
+      return true;
+    },
+  },
 
   // Ship listings (browse_ships) — must come before market listings since both use r.listings
-  { name: 'ship_listings', hintKeys: ['listings'], format: (r) => {
-    if (!Array.isArray(r.listings)) return false;
-    const listings = r.listings as Array<Record<string, unknown>>;
-    if (listings.length === 0 || !listings[0].ship_id) return false;
-    console.log(`\n${c.bright}=== Ships for Sale @ ${r.base_name || 'Station'} ===${c.reset}`);
-    for (const listing of listings) {
-      const shipClass = listing.class_id || 'Unknown';
-      const shipName = listing.ship_name || shipClass;
-      const price = listing.price as number;
-      const formattedPrice = price.toLocaleString();
-      const scale = listing.scale ? `(Scale ${listing.scale})` : '';
-      const tier = listing.tier ? `T${listing.tier}` : '';
-      const category = listing.category ? `${listing.category}` : '';
-      const categoryTier = [category, tier].filter(Boolean).join(' - ');
-      const hull = listing.hull ? `Hull: ${listing.hull}/${listing.max_hull}` : '';
-      const shield = listing.shield ? `Shield: ${listing.shield}` : '';
-      const stats = [hull, shield].filter(Boolean).join(', ');
-      const seller = listing.seller || listing.seller_name || listing.seller_id || 'Unknown';
-      console.log(`\n${c.cyan}${shipName}${c.reset} (${shipClass}) ${scale}`);
-      if (categoryTier) console.log(`  ${categoryTier}`);
-      console.log(`  Price: ${c.yellow}${formattedPrice} credits${c.reset}`);
-      if (stats) console.log(`  ${stats}`);
-      console.log(`  Seller: ${seller}`);
-      console.log(`  Listing ID: ${listing.listing_id}`);
-    }
-    return true;
-  } },
+  {
+    name: 'ship_listings',
+    hintKeys: ['listings'],
+    format: (r) => {
+      if (!Array.isArray(r.listings)) return false;
+      const listings = r.listings as Array<Record<string, unknown>>;
+      if (listings.length === 0 || !listings[0].ship_id) return false;
+      console.log(`\n${c.bright}=== Ships for Sale @ ${r.base_name || 'Station'} ===${c.reset}`);
+      for (const listing of listings) {
+        const shipClass = listing.class_id || 'Unknown';
+        const shipName = listing.ship_name || shipClass;
+        const price = listing.price as number;
+        const formattedPrice = price.toLocaleString();
+        const scale = listing.scale ? `(Scale ${listing.scale})` : '';
+        const tier = listing.tier ? `T${listing.tier}` : '';
+        const category = listing.category ? `${listing.category}` : '';
+        const categoryTier = [category, tier].filter(Boolean).join(' - ');
+        const hull = listing.hull ? `Hull: ${listing.hull}/${listing.max_hull}` : '';
+        const shield = listing.shield ? `Shield: ${listing.shield}` : '';
+        const stats = [hull, shield].filter(Boolean).join(', ');
+        const seller = listing.seller || listing.seller_name || listing.seller_id || 'Unknown';
+        console.log(`\n${c.cyan}${shipName}${c.reset} (${shipClass}) ${scale}`);
+        if (categoryTier) console.log(`  ${categoryTier}`);
+        console.log(`  Price: ${c.yellow}${formattedPrice} credits${c.reset}`);
+        if (stats) console.log(`  ${stats}`);
+        console.log(`  Seller: ${seller}`);
+        console.log(`  Listing ID: ${listing.listing_id}`);
+      }
+      return true;
+    },
+  },
 
   // Market listings
-  { name: 'market_listings', hintKeys: ['listings'], format: (r) => {
-    if (!Array.isArray(r.listings)) return false;
-    const listings = r.listings as Array<Record<string, unknown>>;
-    console.log(`\n${c.bright}=== Market Listings ===${c.reset}`);
-    if (r.buy_price_modifier) {
-      console.log(`Buy price modifier: ${r.buy_price_modifier}x`);
-      console.log(`Sell price modifier: ${r.sell_price_modifier}x`);
-    }
-    if (!listings.length) {
-      console.log(`\n(No listings at this market)`);
-    } else {
-      for (const listing of listings) {
-        const seller = listing.seller_name || listing.seller || listing.seller_id || 'NPC';
-        console.log(`\n  ${listing.item_id}: ${listing.quantity} @ ${listing.price_each} each`);
-        console.log(`    Listing ID: ${listing.listing_id}`);
-        console.log(`    Seller: ${seller}`);
+  {
+    name: 'market_listings',
+    hintKeys: ['listings'],
+    format: (r) => {
+      if (!Array.isArray(r.listings)) return false;
+      const listings = r.listings as Array<Record<string, unknown>>;
+      console.log(`\n${c.bright}=== Market Listings ===${c.reset}`);
+      if (r.buy_price_modifier) {
+        console.log(`Buy price modifier: ${r.buy_price_modifier}x`);
+        console.log(`Sell price modifier: ${r.sell_price_modifier}x`);
       }
-    }
-    return true;
-  } },
+      if (!listings.length) {
+        console.log(`\n(No listings at this market)`);
+      } else {
+        for (const listing of listings) {
+          const seller = listing.seller_name || listing.seller || listing.seller_id || 'NPC';
+          console.log(`\n  ${listing.item_id}: ${listing.quantity} @ ${listing.price_each} each`);
+          console.log(`    Listing ID: ${listing.listing_id}`);
+          console.log(`    Seller: ${seller}`);
+        }
+      }
+      return true;
+    },
+  },
 
   // Location info (get_location) — must come before simple message formatter since
   // the response has both r.location and r.message, which the simple formatter swallows
-  { name: 'location_info', hintKeys: ['location'], format: (r) => {
-    if (!r.location || typeof r.location !== 'object') return false;
-    const loc = r.location as {
-      system_id: string;
-      system_name: string;
-      empire: string;
-      security_status: string;
-      connections: string[];
-      poi_id: string;
-      poi_name: string;
-      poi_type: string;
-      docked_at?: string;
-      nearby_players: Array<Record<string, unknown>>;
-      nearby_player_count: number;
-      nearby_pirates: Array<Record<string, unknown>>;
-      nearby_pirate_count: number;
-      nearby_empire_npcs?: Array<Record<string, unknown>>;
-      nearby_empire_npc_count?: number;
-    };
-    console.log(`\n${c.bright}=== Location ===${c.reset}`);
-    console.log(`${c.cyan}System:${c.reset} ${loc.system_name} (${loc.system_id})`);
-    console.log(`${c.cyan}Empire:${c.reset} ${loc.empire}`);
-    console.log(`${c.cyan}Security:${c.reset} ${loc.security_status}`);
-    if (loc.connections.length > 0) {
-      console.log(`${c.cyan}Connections:${c.reset} ${loc.connections.join(', ')}`);
-    }
-    console.log(`${c.cyan}POI:${c.reset} ${loc.poi_name} (${loc.poi_type})`);
-    if (loc.docked_at) {
-      console.log(`${c.cyan}Docked at:${c.reset} ${loc.docked_at}`);
-    }
-    if (loc.nearby_player_count > 0) {
-      console.log(`\n${c.bright}Nearby Players (${loc.nearby_player_count}):${c.reset}`);
-      for (const player of loc.nearby_players.slice(0, 10)) {
-        console.log(`  ${formatPlayer(player)}`);
+  {
+    name: 'location_info',
+    hintKeys: ['location'],
+    format: (r) => {
+      if (!r.location || typeof r.location !== 'object') return false;
+      const loc = r.location as {
+        system_id: string;
+        system_name: string;
+        empire: string;
+        security_status: string;
+        connections: string[];
+        poi_id: string;
+        poi_name: string;
+        poi_type: string;
+        docked_at?: string;
+        nearby_players: Array<Record<string, unknown>>;
+        nearby_player_count: number;
+        nearby_pirates: Array<Record<string, unknown>>;
+        nearby_pirate_count: number;
+        nearby_empire_npcs?: Array<Record<string, unknown>>;
+        nearby_empire_npc_count?: number;
+      };
+      console.log(`\n${c.bright}=== Location ===${c.reset}`);
+      console.log(`${c.cyan}System:${c.reset} ${loc.system_name} (${loc.system_id})`);
+      console.log(`${c.cyan}Empire:${c.reset} ${loc.empire}`);
+      console.log(`${c.cyan}Security:${c.reset} ${loc.security_status}`);
+      if (loc.connections.length > 0) {
+        console.log(`${c.cyan}Connections:${c.reset} ${loc.connections.join(', ')}`);
       }
-      if (loc.nearby_player_count > 10) {
-        console.log(`  ... and ${loc.nearby_player_count - 10} more`);
+      console.log(`${c.cyan}POI:${c.reset} ${loc.poi_name} (${loc.poi_type})`);
+      if (loc.docked_at) {
+        console.log(`${c.cyan}Docked at:${c.reset} ${loc.docked_at}`);
       }
-    }
-    if (loc.nearby_pirate_count > 0) {
-      console.log(`\n${c.red}Nearby Pirates: ${loc.nearby_pirate_count}${c.reset}`);
-    }
-    if (loc.nearby_empire_npc_count && loc.nearby_empire_npc_count > 0) {
-      console.log(`\n${c.dim}Nearby NPCs: ${loc.nearby_empire_npc_count}${c.reset}`);
-    }
-    return true;
-  } },
+      if (loc.nearby_player_count > 0) {
+        console.log(`\n${c.bright}Nearby Players (${loc.nearby_player_count}):${c.reset}`);
+        for (const player of loc.nearby_players.slice(0, 10)) {
+          console.log(`  ${formatPlayer(player)}`);
+        }
+        if (loc.nearby_player_count > 10) {
+          console.log(`  ... and ${loc.nearby_player_count - 10} more`);
+        }
+      }
+      if (loc.nearby_pirate_count > 0) {
+        console.log(`\n${c.red}Nearby Pirates: ${loc.nearby_pirate_count}${c.reset}`);
+      }
+      if (loc.nearby_empire_npc_count && loc.nearby_empire_npc_count > 0) {
+        console.log(`\n${c.dim}Nearby NPCs: ${loc.nearby_empire_npc_count}${c.reset}`);
+      }
+      return true;
+    },
+  },
 
   // Arrival (travel/jump) — shows destination and online players
-  { name: 'arrival', hintKeys: ['poi_id', 'online_players'], format: (r) => {
-    if (!r.poi_id || !Array.isArray(r.online_players)) return false;
-    console.log(`\n${c.green}Arrived at ${c.bright}${r.poi || r.poi_id}${c.reset}`);
-    const players = r.online_players as Array<Record<string, unknown>>;
-    const count = (r.online_players_count as number) || players.length;
-    if (count > 0) {
-      console.log(`\n${c.bright}Players here (${count}):${c.reset}`);
-      for (const p of players) console.log(`  ${formatPlayer(p)}`);
-      if (r.online_players_truncated) console.log(`  ... and more`);
-    } else {
-      console.log(`\n(No other players here)`);
-    }
-    return true;
-  } },
+  {
+    name: 'arrival',
+    hintKeys: ['poi_id', 'online_players'],
+    format: (r) => {
+      if (!r.poi_id || !Array.isArray(r.online_players)) return false;
+      console.log(`\n${c.green}Arrived at ${c.bright}${r.poi || r.poi_id}${c.reset}`);
+      const players = r.online_players as Array<Record<string, unknown>>;
+      const count = (r.online_players_count as number) || players.length;
+      if (count > 0) {
+        console.log(`\n${c.bright}Players here (${count}):${c.reset}`);
+        for (const p of players) console.log(`  ${formatPlayer(p)}`);
+        if (r.online_players_truncated) console.log(`  ... and more`);
+      } else {
+        console.log(`\n(No other players here)`);
+      }
+      return true;
+    },
+  },
 
   // Station storage
-  { name: 'storage', hintKeys: ['base_id', 'items'], format: (r) => {
-    if (!r.base_id || !Array.isArray(r.items)) return false;
-    const items = r.items as Array<Record<string, unknown>>;
-    const ships = (r.ships as Array<Record<string, unknown>>) || [];
-    console.log(`\n${c.bright}=== Storage at ${r.base_id} ===${c.reset}\n`);
-    printItemTable(items);
-    if (ships.length) {
-      const nameW = Math.max(9, ...ships.map((s) => String(s.class_name || s.class_id || '').length));
-      const classW = Math.max(5, ...ships.map((s) => String(s.class_id || '').length));
-      const idW = Math.max(2, ...ships.map((s) => String(s.ship_id || '').length));
-      const modsW = Math.max(4, ...ships.map((s) => String(s.modules ?? '').length));
-      const cargoW = Math.max(5, ...ships.map((s) => String(s.cargo_used ?? '').length));
-      console.log(`\n${c.bright}Ships (${ships.length}):${c.reset}\n`);
-      console.log(`  ${'Ship Name'.padEnd(nameW)} | ${'Class'.padEnd(classW)} | ${'Mods'.padStart(modsW)} | ${'Cargo'.padStart(cargoW)} | ${'ID'.padEnd(idW)}`);
-      console.log(`  ${'-'.repeat(nameW)}-+-${'-'.repeat(classW)}-+-${'-'.repeat(modsW)}-+-${'-'.repeat(cargoW)}-+-${'-'.repeat(idW)}`);
-      for (const s of ships) {
-        const name = String(s.class_name || s.class_id || '').padEnd(nameW);
-        const cls = String(s.class_id || '').padEnd(classW);
-        const mods = String(s.modules ?? '').padStart(modsW);
-        const cargo = String(s.cargo_used ?? '').padStart(cargoW);
-        const id = String(s.ship_id || '').padEnd(idW);
-        console.log(`  ${name} | ${cls} | ${mods} | ${cargo} | ${id}`);
+  {
+    name: 'storage',
+    hintKeys: ['base_id', 'items'],
+    format: (r) => {
+      if (!r.base_id || !Array.isArray(r.items)) return false;
+      const items = r.items as Array<Record<string, unknown>>;
+      const ships = (r.ships as Array<Record<string, unknown>>) || [];
+      console.log(`\n${c.bright}=== Storage at ${r.base_id} ===${c.reset}\n`);
+      printItemTable(items);
+      if (ships.length) {
+        const nameW = Math.max(9, ...ships.map((s) => String(s.class_name || s.class_id || '').length));
+        const classW = Math.max(5, ...ships.map((s) => String(s.class_id || '').length));
+        const idW = Math.max(2, ...ships.map((s) => String(s.ship_id || '').length));
+        const modsW = Math.max(4, ...ships.map((s) => String(s.modules ?? '').length));
+        const cargoW = Math.max(5, ...ships.map((s) => String(s.cargo_used ?? '').length));
+        console.log(`\n${c.bright}Ships (${ships.length}):${c.reset}\n`);
+        console.log(
+          `  ${'Ship Name'.padEnd(nameW)} | ${'Class'.padEnd(classW)} | ${'Mods'.padStart(modsW)} | ${'Cargo'.padStart(cargoW)} | ${'ID'.padEnd(idW)}`,
+        );
+        console.log(
+          `  ${'-'.repeat(nameW)}-+-${'-'.repeat(classW)}-+-${'-'.repeat(modsW)}-+-${'-'.repeat(cargoW)}-+-${'-'.repeat(idW)}`,
+        );
+        for (const s of ships) {
+          const name = String(s.class_name || s.class_id || '').padEnd(nameW);
+          const cls = String(s.class_id || '').padEnd(classW);
+          const mods = String(s.modules ?? '').padStart(modsW);
+          const cargo = String(s.cargo_used ?? '').padStart(cargoW);
+          const id = String(s.ship_id || '').padEnd(idW);
+          console.log(`  ${name} | ${cls} | ${mods} | ${cargo} | ${id}`);
+        }
       }
-    }
-    return true;
-  } },
+      return true;
+    },
+  },
 
   // Chat confirmation
-  { name: 'chat_sent', hintKeys: ['channel', 'message', 'sent_at'], format: (r) => {
-    if (!r.channel || !r.message || !r.sent_at) return false;
-    const time = new Date(r.sent_at as string).toLocaleTimeString();
-    console.log(`${c.green}[${r.channel}]${c.reset} ${c.dim}${time}${c.reset} ${r.message}`);
-    return true;
-  } },
+  {
+    name: 'chat_sent',
+    hintKeys: ['channel', 'message', 'sent_at'],
+    format: (r) => {
+      if (!r.channel || !r.message || !r.sent_at) return false;
+      const time = new Date(r.sent_at as string).toLocaleTimeString();
+      console.log(`${c.green}[${r.channel}]${c.reset} ${c.dim}${time}${c.reset} ${r.message}`);
+      return true;
+    },
+  },
 
   // Simple message
-  { name: 'simple_message', hintKeys: ['message'], format: (r) => {
-    if (!r.message || Object.keys(r).length > 2) return false;
-    console.log(`${c.green}OK:${c.reset} ${r.message}`);
-    return true;
-  } },
+  {
+    name: 'simple_message',
+    hintKeys: ['message'],
+    format: (r) => {
+      if (!r.message || Object.keys(r).length > 2) return false;
+      console.log(`${c.green}OK:${c.reset} ${r.message}`);
+      return true;
+    },
+  },
 ];
 
 function displayResult(command: string, result?: Record<string, unknown>): void {
