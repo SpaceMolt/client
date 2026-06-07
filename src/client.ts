@@ -1870,6 +1870,12 @@ ${c.bright}Usage:${c.reset}
     spacemolt travel sol_asteroid_belt
     spacemolt travel target_poi=sol_asteroid_belt
 
+${c.bright}Global Flags:${c.reset}
+  --json, -j          Print the raw response JSON instead of formatted output
+                      (suppresses formatters, notices, and update checks)
+  --version, -v       Show client version
+  --help, -h          Show this help
+
 ${c.bright}Information Commands (unlimited):${c.reset}
   get_status          Your player, ship, location
   get_system          Current system's POIs and connections
@@ -1981,10 +1987,16 @@ function displayError(_command: string, error: { code: string; message: string; 
 // =============================================================================
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
 
-  // Check for updates in the background (non-blocking)
-  checkForUpdates();
+  // --json / -j: skip formatters and print the raw response JSON to stdout.
+  // Strip it before parsing so it isn't treated as a command or positional arg.
+  const jsonMode = rawArgs.includes('--json') || rawArgs.includes('-j');
+  const args = rawArgs.filter((a) => a !== '--json' && a !== '-j');
+
+  // Check for updates in the background (non-blocking). Skipped in JSON mode so
+  // the update notice can't corrupt machine-readable output on stdout.
+  if (!jsonMode) checkForUpdates();
 
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     showHelp();
@@ -2037,13 +2049,13 @@ async function main(): Promise<void> {
     const typedPayload = Object.keys(payload).length > 0 ? convertPayloadTypes(payload) : {};
     const response = await execute(command, typedPayload);
 
-    if (response.notifications?.length) {
+    if (!jsonMode && response.notifications?.length) {
       console.log(`${c.dim}--- Notifications (${response.notifications.length}) ---${c.reset}`);
       displayNotifications(response.notifications);
       console.log('');
     }
 
-    if (response.error) {
+    if (response.error && !jsonMode) {
       displayError(command, response.error);
       process.exit(1);
     }
@@ -2070,9 +2082,20 @@ async function main(): Promise<void> {
       }
     }
 
+    if (jsonMode) {
+      console.log(JSON.stringify(response, null, 2));
+      process.exit(response.error ? 1 : 0);
+    }
+
     displayResult(command, response.result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+
+    if (jsonMode) {
+      console.log(JSON.stringify({ error: { message: errorMessage } }, null, 2));
+      process.exit(1);
+    }
+
     console.error(`${c.red}${c.bright}Connection Error:${c.reset} ${errorMessage}`);
     console.error('');
 
