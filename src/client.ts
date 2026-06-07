@@ -284,6 +284,11 @@ const COMMANDS: Record<string, CommandConfig> = {
   faction_info: { args: ['faction_id'] },
   faction_list: { args: ['limit', 'offset'] },
   faction_get_invites: {},
+  faction_accept_invite: {
+    args: ['faction_id'],
+    required: ['faction_id'],
+    usage: '<faction_id>  (accept a pending invite; alias for join_faction)',
+  },
   faction_decline_invite: { args: ['faction_id'] },
   faction_set_enemy: { args: ['target_faction_id'] },
   faction_remove_enemy: {
@@ -310,6 +315,11 @@ const COMMANDS: Record<string, CommandConfig> = {
   faction_propose_peace: { args: ['target_faction_id', 'terms'] },
   faction_accept_peace: { args: ['target_faction_id'] },
   faction_invite: { args: ['player_id'] },
+  faction_withdraw_invite: {
+    args: ['player_id'],
+    required: ['player_id'],
+    usage: '<player_id>  (withdraw a pending invite you sent)',
+  },
   faction_kick: { args: ['player_id'] },
   faction_promote: { args: ['player_id', 'role_id'] },
   faction_edit: { args: ['description', 'charter', 'primary_color', 'secondary_color'] },
@@ -553,6 +563,28 @@ const COMMANDS: Record<string, CommandConfig> = {
     args: ['drone_id', { rest: 'script' }],
     required: ['drone_id', 'script'],
     usage: '<drone_id> <script>  (DroneLang source, max 2000 chars; empty string clears)',
+  },
+  set_drone_name: {
+    args: ['drone_id', { rest: 'name' }],
+    required: ['drone_id'],
+    usage: '<drone_id> <name>  (max 32 chars; omit name to clear)',
+  },
+
+  // Passengers
+  list_passengers: {},
+  list_station_passengers: {
+    args: ['station'],
+    usage: '[station]  (citizens waiting for transport; defaults to current station)',
+  },
+  load_passenger: {
+    args: ['destination'],
+    required: ['destination'],
+    usage: '<destination>  (load all waiting passengers bound for destination, up to free berths)',
+  },
+  unload_passenger: {
+    args: [{ rest: 'name' }],
+    required: ['name'],
+    usage: '<name>  (put a single passenger off the ship at the current station)',
   },
 
   // Query commands
