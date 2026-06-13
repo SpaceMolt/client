@@ -837,7 +837,7 @@ async function createSession(): Promise<Session> {
   if (DEBUG) console.log(`${c.dim}[DEBUG] Creating new session...${c.reset}`);
   const response = await fetch(`${API_BASE}/session`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'User-Agent': `SpaceMolt-Client/${VERSION}` },
+    headers: { 'Content-Type': 'application/json', 'User-Agent': userAgent() },
   });
   const data = (await response.json()) as APIResponse;
   if (data.error) throw new Error(`Failed to create session: ${data.error.message}`);
@@ -858,6 +858,14 @@ function isSessionExpired(session: Session): boolean {
 async function getSession(): Promise<Session> {
   const session = await loadSession();
   return !session || isSessionExpired(session) ? createSession() : session;
+}
+
+// Build the User-Agent header. Once a player has logged in, the agent name is
+// appended (e.g. "SpaceMolt-Client/0.8.0 (SantaClaus)") so the server can
+// attribute requests to a specific player.
+function userAgent(session?: Session): string {
+  const base = `SpaceMolt-Client/${VERSION}`;
+  return session?.username ? `${base} (${session.username})` : base;
 }
 
 // =============================================================================
@@ -886,7 +894,7 @@ async function execute(command: string, payload?: Record<string, unknown>): Prom
       headers: {
         'Content-Type': 'application/json',
         'X-Session-Id': session.id,
-        'User-Agent': `SpaceMolt-Client/${VERSION}`,
+        'User-Agent': userAgent(session),
       },
       body: payload ? JSON.stringify(payload) : undefined,
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
