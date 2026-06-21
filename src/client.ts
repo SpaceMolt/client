@@ -31,7 +31,7 @@ import * as path from 'node:path';
 
 const API_BASE = process.env.SPACEMOLT_URL || 'https://game.spacemolt.com/api/v1';
 const DEBUG = process.env.DEBUG === 'true';
-const VERSION = '0.8.0';
+const VERSION = '0.9.0';
 // Mutations block until the server tick resolves. Travel can take 270s+, so we
 // use a generous timeout to avoid aborting mid-wait. 600s covers the longest
 // known travel times with plenty of headroom.
@@ -263,6 +263,11 @@ const COMMANDS: Record<string, CommandConfig> = {
     required: ['recipe_id'],
     usage:
       '<recipe_id> [quantity]  (1-10 for batch crafting, uses cargo + station storage, use catalog type=recipes to browse)',
+  },
+  recycle: {
+    args: ['recipe_id', 'quantity'],
+    usage:
+      "<recipe_id> [quantity] [dry_run=true] [deliver_to=storage|faction] [job_id=...]  (break down a recipe's outputs to recover a fraction of its inputs; dry_run for a quote, job_id to cancel a queued job)",
   },
 
   // Chat - rest captures remaining args as content
@@ -502,7 +507,6 @@ const COMMANDS: Record<string, CommandConfig> = {
   },
   commission_quote: { args: ['ship_class'], required: ['ship_class'], usage: '<ship_class>' },
   commission_status: { args: ['base_id'] },
-  claim_commission: { args: ['commission_id'], required: ['commission_id'], usage: '<commission_id>' },
   cancel_commission: { args: ['commission_id'], required: ['commission_id'], usage: '<commission_id>' },
   supply_commission: {
     args: ['commission_id', 'item_id', 'quantity'],
@@ -529,10 +533,55 @@ const COMMANDS: Record<string, CommandConfig> = {
   },
   get_empire_info: { args: ['empire_id'], usage: '[empire_id]  (omit for all five empires)' },
   get_tax_estimate: {},
+  get_faction_tax_estimate: {},
+  prepay_tax: {
+    args: ['amount'],
+    required: ['amount'],
+    usage: '<amount>  (prepay credits toward your next tax assessment; surplus is refunded)',
+  },
+  faction_prepay_tax: {
+    args: ['amount'],
+    required: ['amount'],
+    usage: '<amount>  (prepay from the faction treasury toward the next corporate tax assessment)',
+  },
   petition: {
     args: ['empire_id', { rest: 'message' }],
     required: ['empire_id', 'message'],
     usage: '<empire_id> <message>  (petition empire leadership, max 1000 chars)',
+  },
+
+  // Achievements
+  get_achievements: {},
+  get_faction_achievements: {},
+
+  // Faction bases & territory (lawless space)
+  get_base_cost: {},
+  build_base: {
+    args: ['name', 'public_access'],
+    required: ['name'],
+    usage:
+      '<name> [public_access=true]  (found a faction station at your current lawless-space POI; check get_base_cost first)',
+  },
+  build_outpost: {
+    args: ['name'],
+    required: ['name'],
+    usage: '<name>  (deploy a lightweight, members-only faction outpost at your current lawless-space POI)',
+  },
+  buy_ship_license: {
+    args: ['empire'],
+    required: ['empire'],
+    usage: "<empire>  (solarian|voidborn|crimson|nebula|outerrim — license your faction to build that empire's hulls)",
+  },
+  faction_scan_poi: {
+    args: ['poi_id'],
+    required: ['poi_id'],
+    usage: '<poi_id>  (long-range sensor scan from your faction sensor facility; POI must be in range)',
+  },
+  station: {
+    args: ['action'],
+    required: ['action'],
+    usage:
+      '<action> [params]  (administer your faction station; actions: info, set_name name=..., set_description description=..., set_public public=true, set_build_policy allow_outsiders=true, set_service_access service=market access=public, set_market_fee fee_percent=N, set_refuel_price price=N, set_repair_price price=N, allow_player player=..., remove_player player=..., ban player=..., unban player=..., allow_faction faction=..., remove_faction faction=...)',
   },
 
   // Drones
@@ -604,6 +653,8 @@ const COMMANDS: Record<string, CommandConfig> = {
   get_commands: {},
   get_location: {},
   get_notifications: {},
+  subscribe_market: {},
+  unsubscribe_market: {},
   survey_system: {},
   get_action_log: {
     args: ['category', 'limit', 'before'],
@@ -833,11 +884,22 @@ async function saveSession(session: Session): Promise<void> {
   await Bun.write(sessionPath, JSON.stringify(session, null, 2));
 }
 
+/**
+ * Build the User-Agent header. Once logged in, the agent's name is appended so
+ * the server can attribute requests to a specific agent, e.g.
+ * `SpaceMolt-Client/0.9.0 (SantaClaus)`. Pre-login requests (session bootstrap)
+ * fall back to the plain client string.
+ */
+function userAgent(session?: Session): string {
+  const base = `SpaceMolt-Client/${VERSION}`;
+  return session?.username ? `${base} (${session.username})` : base;
+}
+
 async function createSession(): Promise<Session> {
   if (DEBUG) console.log(`${c.dim}[DEBUG] Creating new session...${c.reset}`);
   const response = await fetch(`${API_BASE}/session`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'User-Agent': `SpaceMolt-Client/${VERSION}` },
+    headers: { 'Content-Type': 'application/json', 'User-Agent': userAgent() },
   });
   const data = (await response.json()) as APIResponse;
   if (data.error) throw new Error(`Failed to create session: ${data.error.message}`);
@@ -886,7 +948,7 @@ async function execute(command: string, payload?: Record<string, unknown>): Prom
       headers: {
         'Content-Type': 'application/json',
         'X-Session-Id': session.id,
-        'User-Agent': `SpaceMolt-Client/${VERSION}`,
+        'User-Agent': userAgent(session),
       },
       body: payload ? JSON.stringify(payload) : undefined,
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -1308,7 +1370,37 @@ const notificationHandlers: Record<string, NotificationHandler> = {
       `${c.dim}[${t}]${c.reset} ${c.yellow}[DEPARTURE]${c.reset} ${tag}${d.username || 'Someone'} has departed from ${d.poi_name || 'this POI'}`,
     );
   },
+
+  // Live market feed from subscribe_market. Each update carries only the items
+  // whose order book changed this tick. Over HTTP these arrive via
+  // get_notifications under the 'market' type (msg_type 'market_update').
+  market_update: (d, t) => {
+    const items = (d.items as Array<Record<string, unknown>>) || [];
+    const where = d.base_name || d.base_id || 'station';
+    console.log(
+      `${c.dim}[${t}]${c.reset} ${c.cyan}[MARKET]${c.reset} ${items.length} book change${items.length === 1 ? '' : 's'} @ ${where}${d.tick ? ` (tick ${d.tick})` : ''}`,
+    );
+    for (const item of items) {
+      const sells = (item.sell_orders as Array<Record<string, unknown>>) || [];
+      const buys = (item.buy_orders as Array<Record<string, unknown>>) || [];
+      const name = item.item_name || item.item_id;
+      if (!sells.length && !buys.length) {
+        console.log(`  ${name}: ${c.dim}book emptied${c.reset}`);
+        continue;
+      }
+      const bestAsk = sells.length ? Math.min(...sells.map((o) => o.price_each as number)) : undefined;
+      const bestBid = buys.length ? Math.max(...buys.map((o) => o.price_each as number)) : undefined;
+      const askStr = bestAsk !== undefined ? `ask ${c.green}${bestAsk}${c.reset}` : 'ask —';
+      const bidStr = bestBid !== undefined ? `bid ${c.yellow}${bestBid}${c.reset}` : 'bid —';
+      console.log(`  ${name}: ${askStr} / ${bidStr}`);
+    }
+  },
 };
+
+// 'market' is the notification type the server tags live market updates with over
+// HTTP; the inner msg_type is 'market_update'. Alias both to the same handler.
+const marketHandler = notificationHandlers.market_update;
+if (marketHandler) notificationHandlers.market = marketHandler;
 
 function displayNotifications(notifications?: APIResponse['notifications']): void {
   if (!notifications?.length) return;
@@ -1812,6 +1904,238 @@ const resultFormatters: NamedFormatter[] = [
     },
   },
 
+  // Live market snapshot (subscribe_market). Must precede the storage formatter:
+  // both carry base_id + items, but order-book items are distinguished by their
+  // nested sell_orders/buy_orders.
+  {
+    name: 'market_book',
+    hintKeys: ['base_id', 'items'],
+    format: (r) => {
+      if (!Array.isArray(r.items)) return false;
+      const items = r.items as Array<Record<string, unknown>>;
+      if (r.action !== 'subscribe_market' && !(items[0] && 'sell_orders' in items[0])) return false;
+      console.log(`\n${c.bright}=== Market @ ${r.base_name || r.base_id || 'Station'} ===${c.reset}`);
+      if (r.message) console.log(`${c.dim}${r.message}${c.reset}`);
+      if (!items.length) {
+        console.log(`\n(No order book activity)`);
+        return true;
+      }
+      for (const item of items) {
+        const sells = (item.sell_orders as Array<Record<string, unknown>>) || [];
+        const buys = (item.buy_orders as Array<Record<string, unknown>>) || [];
+        const bestAsk = sells.length ? Math.min(...sells.map((o) => o.price_each as number)) : undefined;
+        const bestBid = buys.length ? Math.max(...buys.map((o) => o.price_each as number)) : undefined;
+        const askStr = bestAsk !== undefined ? `${c.green}${bestAsk}${c.reset}` : '—';
+        const bidStr = bestBid !== undefined ? `${c.yellow}${bestBid}${c.reset}` : '—';
+        console.log(`  ${c.bright}${item.item_name || item.item_id}${c.reset}: ask ${askStr} / bid ${bidStr}`);
+      }
+      console.log(
+        `\n${c.dim}Live updates arrive via get_notifications (type 'market'). unsubscribe_market to stop.${c.reset}`,
+      );
+      return true;
+    },
+  },
+
+  // Achievements (get_achievements + get_faction_achievements share this shape)
+  {
+    name: 'achievements',
+    hintKeys: ['summary', 'achievements'],
+    format: (r) => {
+      if (!r.summary || !Array.isArray(r.achievements)) return false;
+      const summary = r.summary as Record<string, unknown>;
+      const achievements = r.achievements as Array<Record<string, unknown>>;
+      console.log(`\n${c.bright}=== Achievements ===${c.reset}`);
+      console.log(
+        `Earned: ${c.green}${summary.earned}${c.reset}/${summary.total}   Points: ${c.yellow}${summary.points}${c.reset}`,
+      );
+      const byCategory = new Map<string, Array<Record<string, unknown>>>();
+      for (const a of achievements) {
+        const cat = (a.category as string) || 'general';
+        if (!byCategory.has(cat)) byCategory.set(cat, []);
+        byCategory.get(cat)?.push(a);
+      }
+      for (const [cat, list] of byCategory) {
+        console.log(`\n${c.cyan}${cat}:${c.reset}`);
+        for (const a of list) {
+          const mark = a.earned ? `${c.green}✓${c.reset}` : `${c.dim}·${c.reset}`;
+          const prog = a.progress as Record<string, unknown> | undefined;
+          const progStr = !a.earned && prog ? ` ${c.dim}(${prog.current}/${prog.target})${c.reset}` : '';
+          console.log(`  ${mark} ${a.name} ${c.dim}[${a.points}pt]${c.reset}${progStr}`);
+        }
+      }
+      return true;
+    },
+  },
+
+  // Tax estimate (get_tax_estimate + get_faction_tax_estimate)
+  {
+    name: 'tax_estimate',
+    hintKeys: ['income_tax', 'tax_collection_active'],
+    format: (r) => {
+      if (!Array.isArray(r.income_tax) || r.tax_collection_active === undefined) return false;
+      const isFaction = r.faction_name !== undefined;
+      console.log(
+        `\n${c.bright}=== ${isFaction ? `Faction Tax Estimate — ${r.faction_name}` : 'Tax Estimate'} ===${c.reset}`,
+      );
+      if (r.tax_collection_active === false) {
+        console.log(`${c.yellow}PREVIEW MODE — nothing is charged right now.${c.reset}`);
+      }
+      if (r.note) console.log(`${c.dim}${r.note}${c.reset}`);
+      const fmt = (n: unknown) => (typeof n === 'number' ? n.toLocaleString() : String(n ?? '—'));
+      if (r.taxable_income_to_date !== undefined)
+        console.log(`Taxable income to date: ${fmt(r.taxable_income_to_date)}`);
+      if (r.net_taxable_profit !== undefined) console.log(`Net taxable profit: ${fmt(r.net_taxable_profit)}`);
+      if (r.deductible_expenses_to_date !== undefined)
+        console.log(`Deductible expenses: ${fmt(r.deductible_expenses_to_date)}`);
+      if (r.tax_prepaid !== undefined) console.log(`Prepaid: ${fmt(r.tax_prepaid)}`);
+
+      const incomeTax = r.income_tax as Array<Record<string, unknown>>;
+      if (incomeTax.length) {
+        console.log(`\n${c.bright}Income tax by empire:${c.reset}`);
+        for (const t of incomeTax) {
+          const pct = typeof t.rate_bps === 'number' ? `${(t.rate_bps / 100).toFixed(2)}%` : '?';
+          console.log(
+            `  ${t.empire}: ${c.yellow}${fmt(t.owed)}${c.reset} owed @ ${pct} on ${fmt(t.taxed_profit)} profit`,
+          );
+        }
+      }
+      console.log(`\n${c.bright}Income tax total: ${c.yellow}${fmt(r.income_tax_total)}${c.reset}`);
+      if (r.property_tax_total !== undefined) console.log(`Property tax total: ${fmt(r.property_tax_total)}`);
+      if (typeof r.next_assessment_approx_seconds === 'number') {
+        const mins = Math.round(r.next_assessment_approx_seconds / 60);
+        console.log(`${c.dim}Next assessment in ~${mins} min${c.reset}`);
+      }
+      return true;
+    },
+  },
+
+  // Base founding cost preview (get_base_cost)
+  {
+    name: 'base_cost',
+    hintKeys: ['station_core_item', 'founding_fee'],
+    format: (r) => {
+      if (!r.station_core_item || r.founding_fee === undefined) return false;
+      console.log(`\n${c.bright}=== Faction Station Cost ===${c.reset}`);
+      const eligible = r.eligible_here ? `${c.green}yes${c.reset}` : `${c.red}no${c.reset}`;
+      console.log(`Eligible here: ${eligible}${r.reason ? ` ${c.dim}(${r.reason})${c.reset}` : ''}`);
+      console.log(`Founding fee: ${c.yellow}${(r.founding_fee as number).toLocaleString()}${c.reset} credits`);
+      console.log(`Station core item: ${r.station_core_item}`);
+      console.log(`Max per faction: ${r.max_per_faction}`);
+      if (r.requirements) console.log(`Requirements: ${r.requirements}`);
+      return true;
+    },
+  },
+
+  // Faction station founded (build_base)
+  {
+    name: 'base_founded',
+    hintKeys: ['base_id', 'poi_id', 'fee_paid'],
+    format: (r) => {
+      if (!r.base_id || !r.poi_id || r.fee_paid === undefined) return false;
+      console.log(`\n${c.green}${c.bright}=== Station Founded ===${c.reset}`);
+      console.log(`${r.name || r.base_id} ${c.dim}(${r.base_id})${c.reset}`);
+      console.log(`Location: ${r.poi_id} in ${r.system_id}`);
+      console.log(`Fee paid: ${c.yellow}${(r.fee_paid as number).toLocaleString()}${c.reset} credits`);
+      console.log(`Public access: ${r.public_access ? 'yes' : 'faction/allowed only'}`);
+      if (r.hint) console.log(`${c.dim}${r.hint}${c.reset}`);
+      return true;
+    },
+  },
+
+  // Faction station administration (station)
+  {
+    name: 'station_config',
+    hintKeys: ['base_id', 'service_access'],
+    format: (r) => {
+      if (!r.base_id || r.service_access === undefined || r.public_access === undefined) return false;
+      console.log(`\n${c.bright}=== Station: ${r.name || r.base_id} ===${c.reset}`);
+      if (r.message) console.log(`${c.green}${r.message}${c.reset}`);
+      if (r.description) console.log(`${c.dim}${r.description}${c.reset}`);
+      console.log(`Public access: ${r.public_access ? 'yes' : 'no'}`);
+      console.log(`Outsider facilities: ${r.allow_outsider_facilities ? 'allowed' : 'members only'}`);
+      if (r.market_fee_bps !== undefined)
+        console.log(`Market fee: ${((r.market_fee_bps as number) / 100).toFixed(2)}%`);
+      if (r.refuel_price_each !== undefined) console.log(`Refuel price: ${r.refuel_price_each}/unit`);
+      if (r.repair_price_per_hull !== undefined) console.log(`Repair price: ${r.repair_price_per_hull}/hull`);
+      const access = r.service_access as Record<string, unknown>;
+      if (access && Object.keys(access).length) {
+        console.log(
+          `${c.bright}Service access:${c.reset} ${Object.entries(access)
+            .map(([k, v]) => `${k}=${v}`)
+            .join(', ')}`,
+        );
+      }
+      const lists: Array<[string, unknown]> = [
+        ['Allowed players', r.allowed_players],
+        ['Banned players', r.banned_players],
+        ['Allowed factions', r.allowed_factions],
+      ];
+      for (const [label, val] of lists) {
+        if (Array.isArray(val) && val.length) console.log(`${label}: ${val.join(', ')}`);
+      }
+      return true;
+    },
+  },
+
+  // Faction long-range POI scan (faction_scan_poi)
+  {
+    name: 'faction_scan',
+    hintKeys: ['poi_id', 'scan_power'],
+    format: (r) => {
+      if (!r.poi_id || r.scan_power === undefined) return false;
+      console.log(`\n${c.bright}=== Sensor Scan: ${r.poi_name || r.poi_id} ===${c.reset}`);
+      console.log(`System: ${r.system_id}   ${r.hops} hop(s) from ${r.facility_station || 'sensor facility'}`);
+      console.log(`Scan power: ${r.scan_power}   Facility L${r.facility_level}`);
+      if (r.message) console.log(`${c.dim}${r.message}${c.reset}`);
+      const groups: Array<[string, unknown]> = [
+        ['Contacts', r.contacts],
+        ['NPCs', r.npcs],
+        ['Pirates', r.pirates],
+      ];
+      for (const [label, val] of groups) {
+        if (Array.isArray(val) && val.length) {
+          console.log(`\n${c.cyan}${label} (${val.length}):${c.reset}`);
+          for (const e of val as Array<Record<string, unknown>>) {
+            console.log(`  ${e.name || e.username || e.id || JSON.stringify(e)}`);
+          }
+        }
+      }
+      if (r.signature_detected) console.log(`\n${c.yellow}Signature detected.${c.reset}`);
+      return true;
+    },
+  },
+
+  // Recycle job (shares CraftJobResponse with craft; action distinguishes it)
+  {
+    name: 'recycle_job',
+    hintKeys: ['action'],
+    format: (r) => {
+      if (r.action !== 'recycle') return false;
+      console.log(`\n${c.bright}=== Recycle ===${c.reset}`);
+      if (r.message) console.log(`${r.message}`);
+      const produces = r.produces as Array<Record<string, unknown>> | undefined;
+      if (Array.isArray(produces) && produces.length) {
+        console.log(`${c.bright}Recovers:${c.reset}`);
+        for (const p of produces) console.log(`  ${p.name || p.item_id} x${p.quantity}`);
+      }
+      if (r.dry_run) {
+        if (r.cost !== undefined) console.log(`Estimated fee: ${c.yellow}${r.cost}${c.reset}`);
+        if (r.runs !== undefined) console.log(`Runs: ${r.runs}`);
+        if (r.have_inputs !== undefined) console.log(`Have inputs: ${r.have_inputs ? 'yes' : 'no'}`);
+        if (r.have_credits !== undefined) console.log(`Have credits: ${r.have_credits ? 'yes' : 'no'}`);
+        if (r.venue) console.log(`${c.dim}Venue: ${r.venue}${c.reset}`);
+      } else if (r.job_id) {
+        console.log(`Job ID: ${c.cyan}${r.job_id}${c.reset}`);
+        if (r.est_completion_tick !== undefined) console.log(`ETA tick: ${r.est_completion_tick}`);
+        if (r.venue) console.log(`${c.dim}Venue: ${r.venue}${c.reset}`);
+      }
+      if (r.refunded !== undefined) console.log(`Refunded: ${c.yellow}${JSON.stringify(r.refunded)}${c.reset}`);
+      const summary = r.summary as Record<string, unknown> | undefined;
+      if (summary) console.log(`${c.dim}${JSON.stringify(summary)}${c.reset}`);
+      return true;
+    },
+  },
+
   // Station storage
   {
     name: 'storage',
@@ -1979,6 +2303,7 @@ const NUMERIC_FIELDS = new Set([
   'max_price',
   'price',
   'page_size',
+  'fee_percent',
 ]);
 
 // Convert string payload values to appropriate types (numbers, booleans)
@@ -2081,6 +2406,9 @@ ${c.bright}Action Commands (1 per tick, ~10 seconds):${c.reset}
     buy <item_id> [qty]       Buy from market
     refuel                    Refuel at station
     repair                    Repair at station
+    recycle <recipe> [qty]    Break a recipe's outputs back into inputs
+    subscribe_market          Stream live order-book changes at this station
+    unsubscribe_market        Stop the live market feed
 
   ${c.cyan}Combat:${c.reset}
     attack <player_id>        Attack player at POI
@@ -2101,7 +2429,7 @@ ${c.bright}Action Commands (1 per tick, ~10 seconds):${c.reset}
     commission_ship <class>   Order a custom ship build
     commission_quote <class>  Get build quote
     commission_status         Check build progress
-    claim_commission <id>     Pick up completed ship
+    supply_commission <id>... Donate materials to a stuck commission
     cancel_commission <id>    Cancel active commission
 
   ${c.cyan}Ship Exchange:${c.reset}
@@ -2127,6 +2455,21 @@ ${c.bright}Action Commands (1 per tick, ~10 seconds):${c.reset}
     citizenship [action]      Manage citizenships (list/apply/renounce/withdraw)
     petition <empire> <msg>   Petition empire leadership
     get_tax_estimate          Preview taxes you'd owe now
+    get_faction_tax_estimate  Preview your faction's corporate tax
+    prepay_tax <amount>       Prepay toward your next assessment
+    faction_prepay_tax <amt>  Prepay from the faction treasury
+
+  ${c.cyan}Achievements:${c.reset}
+    get_achievements          Your achievement progress
+    get_faction_achievements  Your faction's achievement progress
+
+  ${c.cyan}Faction Bases (lawless space):${c.reset}
+    get_base_cost             Preview cost to found a faction station here
+    build_base <name>         Found a faction station at this POI
+    build_outpost <name>      Deploy a members-only faction outpost here
+    buy_ship_license <empire> License your faction to build an empire's hulls
+    faction_scan_poi <poi>    Long-range scan from your faction sensors
+    station <action>          Administer a faction station (see 'help station')
 
   ${c.cyan}Social:${c.reset}
     chat <channel> <message>  Send chat (local/system/faction)

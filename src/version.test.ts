@@ -626,6 +626,36 @@ describe('client.ts source integrity', () => {
     }
   });
 
+  test('all new v0.9.0 commands are present', () => {
+    const clientPath = path.join(import.meta.dir, 'client.ts');
+    const src = fs.readFileSync(clientPath, 'utf-8');
+    const newCommands = [
+      'build_base',
+      'build_outpost',
+      'get_base_cost',
+      'buy_ship_license',
+      'station',
+      'faction_scan_poi',
+      'get_achievements',
+      'get_faction_achievements',
+      'prepay_tax',
+      'get_faction_tax_estimate',
+      'faction_prepay_tax',
+      'recycle',
+      'subscribe_market',
+      'unsubscribe_market',
+    ];
+    for (const cmd of newCommands) {
+      expect(src).toContain(`  ${cmd}:`);
+    }
+  });
+
+  test('stale claim_commission is removed (replaced by supply_commission)', () => {
+    const clientPath = path.join(import.meta.dir, 'client.ts');
+    const src = fs.readFileSync(clientPath, 'utf-8');
+    expect(src).not.toContain('claim_commission');
+  });
+
   test('deprecated commands are removed', () => {
     const clientPath = path.join(import.meta.dir, 'client.ts');
     const src = fs.readFileSync(clientPath, 'utf-8');
@@ -638,9 +668,8 @@ describe('client.ts source integrity', () => {
       'get_friend_requests',
       'accept_friend_request',
       'decline_friend_request',
-      // Base raiding system
-      'build_base',
-      'get_base_cost',
+      // Base raiding system (build_base/get_base_cost have since returned as the
+      // faction-station-founding system and are asserted present below)
       'attack_base',
       'raid_status',
       'get_base_wrecks',
