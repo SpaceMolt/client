@@ -39,6 +39,10 @@ const UNDOCUMENTED_IN_SPEC = new Set([
   'v2_get_missions',
   'v2_get_queue',
   'v2_get_skills',
+
+  // Exist server-side (POST returns 401, not 404) but absent from openapi.json
+  'salvage_wreck',
+  'sell_ship',
 ]);
 
 /**
