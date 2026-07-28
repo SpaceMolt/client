@@ -152,6 +152,12 @@ const COMMANDS: Record<string, CommandConfig> = {
     required: ['registration_code'],
     usage: '<registration_code>  (link existing player to your account)',
   },
+  login_link: {},
+  login_link_poll: {
+    args: ['device_code'],
+    required: ['device_code'],
+    usage: '<device_code>  (poll a browser login started with login_link)',
+  },
 
   // Navigation
   travel: { args: ['target_poi'], required: ['target_poi'], usage: '<poi_id>  (use get_system to see POIs)' },
@@ -181,6 +187,11 @@ const COMMANDS: Record<string, CommandConfig> = {
   scan: { args: ['target_id'], required: ['target_id'], usage: '<player_id>' },
   cloak: { args: ['enable'] },
   self_destruct: {},
+  hunt: {
+    args: ['target_id'],
+    required: ['target_id'],
+    usage: "<creature_id>  (use get_nearby to see the 'creatures' list)",
+  },
 
   // Trading
   sell: {
@@ -210,15 +221,13 @@ const COMMANDS: Record<string, CommandConfig> = {
     required: ['wreck_id', 'item_id'],
     usage: '<wreck_id> <item_id> [quantity]  (use get_wrecks to see wrecks)',
   },
-  salvage_wreck: { args: ['wreck_id'], required: ['wreck_id'], usage: '<wreck_id>' },
+  // NOTE: salvage_wreck was removed server-side. Use loot_wreck in the field, or
+  // tow_wreck -> sell_wreck (credits) / scrap_wreck (materials) at a salvage yard.
 
   // Ship management
   name_ship: { args: ['name'], required: ['name'], usage: '<name>  (set a custom name for your current ship)' },
-  sell_ship: {
-    args: ['ship_id'],
-    required: ['ship_id'],
-    usage: '<ship_id>  (sell a stored ship at current base, use list_ships to see)',
-  },
+  // NOTE: sell_ship was removed server-side. Use list_ship_for_sale (player market),
+  // sell_ship_to_order (fill a standing buy order), or scrap_ship (no credits).
   list_ships: {},
   switch_ship: {
     args: ['ship_id'],
@@ -487,6 +496,16 @@ const COMMANDS: Record<string, CommandConfig> = {
     usage: '<action> [stance] [target_id] [side_id]  (actions: join, leave, stance, target, etc.)',
   },
   get_battle_status: {},
+  get_battle_summary: {
+    args: ['battle_id'],
+    required: ['battle_id'],
+    usage: '<battle_id>  (aggregate result of a battle)',
+  },
+  get_battle_log: {
+    args: ['battle_id', 'tick_start', 'tick_end', 'limit'],
+    required: ['battle_id'],
+    usage: '<battle_id> [tick_start] [tick_end] [limit]  (tick-by-tick combat replay)',
+  },
   reload: {
     args: ['weapon_instance_id', 'ammo_item_id'],
     required: ['weapon_instance_id', 'ammo_item_id'],
@@ -519,6 +538,22 @@ const COMMANDS: Record<string, CommandConfig> = {
   browse_ships: { args: ['base_id', 'class_id', 'max_price'] },
   buy_listed_ship: { args: ['listing_id'], required: ['listing_id'], usage: '<listing_id>' },
   cancel_ship_listing: { args: ['listing_id'], required: ['listing_id'], usage: '<listing_id>' },
+  sell_ship_to_order: {
+    args: ['order_id', 'ship_id'],
+    required: ['order_id', 'ship_id'],
+    usage: '<order_id> <ship_id>  (sell a stored ship into a standing buy order, see browse_ships)',
+  },
+  place_ship_buy_order: {
+    args: ['class_id', 'price'],
+    required: ['class_id', 'price'],
+    usage: '<class_id> <price>  (standing buy order for a ship class at this base)',
+  },
+  view_ship_buy_orders: {},
+  cancel_ship_buy_order: {
+    args: ['order_id'],
+    required: ['order_id'],
+    usage: '<order_id>  (cancel a buy order and refund the escrow)',
+  },
 
   // Insurance
   buy_insurance: { args: ['ticks'], required: ['ticks'], usage: '<ticks>  (number of ticks of coverage)' },
@@ -567,6 +602,9 @@ const COMMANDS: Record<string, CommandConfig> = {
     required: ['name'],
     usage: '<name>  (deploy a lightweight, members-only faction outpost at your current lawless-space POI)',
   },
+  dismantle_outpost: {},
+  espionage: {},
+  faction_garages: {},
   buy_ship_license: {
     args: ['empire'],
     required: ['empire'],
@@ -653,8 +691,28 @@ const COMMANDS: Record<string, CommandConfig> = {
   get_commands: {},
   get_location: {},
   get_notifications: {},
+  get_notification_settings: {},
+  mute_notifications: {
+    args: ['channels'],
+    required: ['channels'],
+    usage: '<channels>  (comma-separated channels to mute, see get_notification_settings)',
+  },
+  unmute_notifications: {
+    args: ['channels', 'all'],
+    usage: '[channels] [all=true]  (unmute channels, or all=true for every channel)',
+  },
   subscribe_market: {},
   unsubscribe_market: {},
+  subscribe_observation: {
+    args: ['active_scan'],
+    usage: '[active_scan=true]  (live presence feed at your POI/system; active_scan burns fuel and alerts cloakers)',
+  },
+  unsubscribe_observation: {},
+  inspect: {
+    args: ['id'],
+    required: ['id'],
+    usage: '<id>  (inspect a visible package, item, module, ship class, system, POI, or docked base)',
+  },
   survey_system: {},
   get_action_log: {
     args: ['category', 'limit', 'before'],
@@ -680,6 +738,12 @@ const COMMANDS: Record<string, CommandConfig> = {
   storage: {
     args: ['action', 'item_id', 'quantity'],
     usage: '<action> [item_id] [quantity]  (unified storage interface)',
+  },
+  shipping: {
+    args: ['action', 'package_id', 'shipment_id'],
+    required: ['action'],
+    usage:
+      '<action> [package_id] [shipment_id] [key=value...]  (sealed-package freight; actions: quote, post, list, active, get, track, profile, pay_debt, accept, deliver, return, cancel)',
   },
 
   // Reference & Help

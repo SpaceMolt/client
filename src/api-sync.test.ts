@@ -76,10 +76,16 @@ describe('api sync', () => {
         return;
       }
       expect(resp.status, `Failed to fetch OpenAPI spec: HTTP ${resp.status}`).toBe(200);
-      const spec = (await resp.json()) as { paths: Record<string, unknown> };
+      const spec = (await resp.json()) as { paths: Record<string, Record<string, unknown>> };
 
-      // All spec paths are POST endpoints at /<command>
-      const apiEndpoints = new Set(Object.keys(spec.paths).map((p) => p.replace(/^\//, '')));
+      // Player commands are the POST endpoints at /<command>. The spec also carries
+      // non-command routes (e.g. GET /api/catalog.json, a bulk download); those are not
+      // commands and must not be required in COMMANDS.
+      const apiEndpoints = new Set(
+        Object.entries(spec.paths)
+          .filter(([, ops]) => 'post' in ops)
+          .map(([p]) => p.replace(/^\//, '')),
+      );
 
       // Add undocumented endpoints that we've verified exist on the server
       for (const cmd of UNDOCUMENTED_IN_SPEC) apiEndpoints.add(cmd);
