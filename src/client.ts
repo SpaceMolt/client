@@ -1502,7 +1502,7 @@ interface NamedFormatter {
   format: (result: Record<string, unknown>) => boolean;
 }
 
-const resultFormatters: NamedFormatter[] = [
+export const resultFormatters: NamedFormatter[] = [
   // Player status
   {
     name: 'player_status',
@@ -1748,10 +1748,16 @@ const resultFormatters: NamedFormatter[] = [
         console.log(`(No wrecks at this location)`);
       } else {
         for (const w of wrecks) {
-          console.log(`\n${c.yellow}Wreck: ${w.wreck_id}${c.reset}`);
+          console.log(`\n${c.yellow}Wreck: ${w.id}${c.reset}`);
           console.log(`  Ship: ${w.ship_class}`);
-          console.log(`  Expires in: ${w.ticks_remaining} ticks`);
-          const items = (w.items as Array<Record<string, unknown>>) || [];
+          // expire_tick === 0 means the wreck never expires (ship/pirate/abandoned wrecks);
+          // only jettisoned junk containers get a finite expiry.
+          if (w.expire_tick) {
+            console.log(`  Expires at: ${w.expires_at ?? `tick ${w.expire_tick}`}`);
+          } else {
+            console.log(`  Expires: never`);
+          }
+          const items = (w.cargo as Array<Record<string, unknown>>) || [];
           if (items.length) {
             console.log(`  Contents:`);
             for (const item of items) console.log(`    - ${item.quantity}x ${item.item_id}`);
@@ -2708,4 +2714,7 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// Only run the CLI when executed directly, so the module can be imported by tests.
+if (import.meta.main) {
+  main();
+}
