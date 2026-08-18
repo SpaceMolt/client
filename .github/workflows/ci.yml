@@ -26,7 +26,7 @@ jobs:
         run: bun run lint
 
       - name: Unit tests
-        run: bun test src/version.test.ts
+        run: bun test src/version.test.ts src/v2-state-format.test.ts
 
       - name: API sync test
         run: bun test src/api-sync.test.ts

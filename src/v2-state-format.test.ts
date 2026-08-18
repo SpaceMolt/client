@@ -46,7 +46,9 @@ const playerResponse = {
     is_cloaked: false,
     home_base: 'haven_station',
     stats: { credits_earned: 91000000, ships_destroyed: 3 },
-    standings: { nebula: { standing: 120, level: 'trusted' } },
+    // Real wire shape of apiresponses.EmpireStanding — reputation/baseline/
+    // outstanding_bounty/jailed_until, not a made-up standing/level pair.
+    standings: { nebula: { reputation: 42, baseline: 10, outstanding_bounty: 0 } },
     citizenships: ['nebula'],
   },
   message: 'Player status',
@@ -55,12 +57,21 @@ const playerResponse = {
 describe('v2 state formatter (gh#1961)', () => {
   test('v2_get_player renders the player block instead of swallowing it', () => {
     const { out, matched } = render(playerResponse);
-    expect(matched).not.toBe('simple_message');
+    expect(matched).toBe('v2_state');
     expect(out).toContain('Cassia Wrenfield');
     expect(out).toContain('81929234');
     expect(out).toContain('nebula');
     expect(out).toContain('haven_station');
     expect(out).not.toContain('undefined');
+  });
+
+  test('standings render the real reputation/baseline fields, not a placeholder', () => {
+    const { out } = render(playerResponse);
+    expect(out).toContain('42');
+    expect(out).toContain('baseline 10');
+    // The pre-fix code read s.standing/s.level, which do not exist on the wire
+    // and rendered every empire as "?".
+    expect(out).not.toContain('nebula: ?');
   });
 
   test('v2_get_missions renders active missions', () => {
@@ -107,6 +118,14 @@ describe('v2 state formatter (gh#1961)', () => {
 
   test('simple_message no longer eats a two-key payload that carries data', () => {
     const { matched } = render({ message: 'Something', unrecognized_block: { a: 1 } });
+    expect(matched).toBe(null);
+  });
+
+  test('v2_state declines a blob carrying a section it cannot render', () => {
+    // A delta with player + riding must not be claimed: v2_state would print
+    // the player block and silently drop `riding`, which is gh#1961 again.
+    // Falling through gets the player the raw JSON plus a drift warning.
+    const { matched } = render({ ...playerResponse, riding: { ship_id: 's1', owner: 'Molt' } });
     expect(matched).toBe(null);
   });
 });

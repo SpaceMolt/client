@@ -2266,6 +2266,22 @@ export const resultFormatters: NamedFormatter[] = [
       const queue = r.queue as Record<string, unknown> | undefined;
       if (!p && !missions && !queue) return false;
 
+      // Only claim the response if every top-level key is one this formatter
+      // renders. Anything else (a delta carrying ship/cargo/location, a new
+      // server field) must fall through to the drift warning and raw JSON
+      // rather than be silently dropped — that silent drop is gh#1961 itself.
+      const rendered = new Set([
+        'player',
+        'missions',
+        'queue',
+        'credits',
+        'message',
+        'hints',
+        'auto_docked',
+        'auto_undocked',
+      ]);
+      if (Object.keys(r).some((k) => !rendered.has(k))) return false;
+
       if (p) {
         console.log(`\n${c.bright}=== Player ===${c.reset}`);
         console.log(`Username: ${c.bright}${p.username}${c.reset}${p.clan_tag ? ` [${p.clan_tag}]` : ''}`);
@@ -2282,7 +2298,11 @@ export const resultFormatters: NamedFormatter[] = [
         if (standings && Object.keys(standings).length) {
           console.log(`\n${c.bright}Standings:${c.reset}`);
           for (const [id, s] of Object.entries(standings)) {
-            console.log(`  ${id}: ${s.standing ?? s.value ?? '?'}${s.level ? ` (${s.level})` : ''}`);
+            const bounty = Number(s.outstanding_bounty ?? 0);
+            const parts = [`baseline ${s.baseline}`];
+            if (bounty > 0) parts.push(`${c.yellow}bounty ${bounty}${c.reset}`);
+            if (s.jailed_until) parts.push(`${c.red}jailed until ${s.jailed_until}${c.reset}`);
+            console.log(`  ${id}: ${s.reputation} (${parts.join(', ')})`);
           }
         }
         const stats = p.stats as Record<string, unknown> | undefined;
