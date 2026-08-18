@@ -1502,6 +1502,76 @@ interface NamedFormatter {
   format: (result: Record<string, unknown>) => boolean;
 }
 
+/**
+ * Every top-level key a v2 state blob can carry, taken from
+ * `handlers.V2GameState` in the gameserver (internal/handlers/v2state.go).
+ * The delta wrapper builds the same struct for every mutation, so this is the
+ * complete emittable key set — plus the two auto-dock flags displayResult
+ * prints itself. A key that is not in here is genuinely new and must reach the
+ * drift warning.
+ *
+ * Every key is rendered by the v2_state formatter except `version`, which is a
+ * wire-format marker with nothing in it for the player, and the auto-dock flags
+ * displayResult already printed.
+ */
+const V2_STATE_KEYS = new Set([
+  'version',
+  'player',
+  'ship',
+  'modules',
+  'cargo',
+  'location',
+  'missions',
+  'queue',
+  'skills',
+  'credits',
+  'message',
+  'details',
+  'hints',
+  'riding',
+  'carried_ships',
+  'bay_used',
+  'bay_capacity',
+  'auto_docked',
+  'auto_undocked',
+]);
+
+/**
+ * Every payload-carrying key of a v2 state blob — V2_STATE_KEYS minus the
+ * wire-format marker, the message and the auto-dock flags. `credits` and
+ * `hints` are in here on purpose: get_location answers with
+ * `{location, credits, message}`, so a guard that watched only the object
+ * sections would let a partial formatter claim it and drop the balance.
+ */
+const V2_STATE_PAYLOAD_KEYS = [
+  'player',
+  'ship',
+  'modules',
+  'cargo',
+  'location',
+  'missions',
+  'queue',
+  'skills',
+  'riding',
+  'carried_ships',
+  'details',
+  'credits',
+  'hints',
+  'bay_used',
+  'bay_capacity',
+];
+
+/**
+ * True when `r` is a v2 state blob that carries a section outside `owned`.
+ * A formatter that renders only part of the blob calls this to decline instead
+ * of claiming the response and silently dropping the rest — that silent drop
+ * is gh#1961 itself.
+ */
+function v2BlobCarriesUnowned(r: Record<string, unknown>, owned: string[]): boolean {
+  if (!Object.keys(r).every((k) => V2_STATE_KEYS.has(k))) return false;
+  return V2_STATE_PAYLOAD_KEYS.some((s) => r[s] !== undefined && !owned.includes(s));
+}
+
 export const resultFormatters: NamedFormatter[] = [
   // Player status
   {
@@ -1510,6 +1580,13 @@ export const resultFormatters: NamedFormatter[] = [
     format: (r) => {
       if (!r.player || !r.ship) return false;
       const p = r.player as Record<string, unknown>;
+      // A v2 state blob also carries player + ship, but its V2Player has no
+      // current_system / current_poi — location lives in its own `location`
+      // section. Claiming it printed "System: undefined" and "Docked: No"
+      // while docked, and dropped every other section (gh#1961). v1
+      // PlayerInfo always serialises both fields, so their absence is a
+      // reliable v2 tell. Decline and let v2_state render the whole blob.
+      if (p.current_system === undefined && p.current_poi === undefined) return false;
       const s = r.ship as Record<string, unknown>;
       const sys = r.system as Record<string, unknown> | undefined;
       const poi = r.poi as Record<string, unknown> | undefined;
@@ -1804,6 +1881,10 @@ export const resultFormatters: NamedFormatter[] = [
     hintKeys: ['skills'],
     format: (r) => {
       if (!r.skills || typeof r.skills !== 'object' || Array.isArray(r.skills)) return false;
+      // A v2 state blob carries skills alongside player/ship/location/…; this
+      // formatter renders only the skills map, so claiming it would drop the
+      // rest (gh#1961). A plain v1 skills response has no other v2 section.
+      if (v2BlobCarriesUnowned(r, ['skills'])) return false;
       const skills = r.skills as Record<
         string,
         {
@@ -1907,6 +1988,9 @@ export const resultFormatters: NamedFormatter[] = [
     hintKeys: ['location'],
     format: (r) => {
       if (!r.location || typeof r.location !== 'object') return false;
+      // Same guard as skills_v1: a v2 delta can pair `location` with player,
+      // ship or cargo, and this formatter renders only the location block.
+      if (v2BlobCarriesUnowned(r, ['location'])) return false;
       const loc = r.location as {
         system_id: string;
         system_name: string;
@@ -2264,7 +2348,31 @@ export const resultFormatters: NamedFormatter[] = [
       const p = r.player as Record<string, unknown> | undefined;
       const missions = r.missions as Record<string, unknown> | undefined;
       const queue = r.queue as Record<string, unknown> | undefined;
-      if (!p && !missions && !queue) return false;
+      const ship = r.ship as Record<string, unknown> | undefined;
+      const loc = r.location as Record<string, unknown> | undefined;
+      const riding = r.riding as Record<string, unknown> | undefined;
+      const modules = r.modules as Array<Record<string, unknown>> | undefined;
+      const cargo = r.cargo as Array<Record<string, unknown>> | undefined;
+      const carried = r.carried_ships as Array<Record<string, unknown>> | undefined;
+      const skills = r.skills as Record<string, Record<string, unknown>> | undefined;
+      if (!V2_STATE_PAYLOAD_KEYS.some((s) => r[s] !== undefined)) return false;
+
+      // Shape check: a v1 response can reuse a v2 key name with a different
+      // type (an array `missions`, for one). Decline rather than render an
+      // empty section over it — the raw JSON fallback is the honest answer.
+      const isObject = (v: unknown) => v !== null && typeof v === 'object' && !Array.isArray(v);
+      for (const k of ['player', 'ship', 'location', 'missions', 'queue', 'riding', 'skills']) {
+        if (r[k] !== undefined && !isObject(r[k])) return false;
+      }
+      for (const k of ['modules', 'cargo', 'carried_ships']) {
+        if (r[k] !== undefined && !Array.isArray(r[k])) return false;
+      }
+
+      // Only claim the response if every top-level key is one V2GameState can
+      // emit. A key outside that set is a genuinely new server field and must
+      // reach the drift warning and raw JSON rather than be silently dropped —
+      // that silent drop is gh#1961 itself.
+      if (Object.keys(r).some((k) => !V2_STATE_KEYS.has(k))) return false;
 
       if (p) {
         console.log(`\n${c.bright}=== Player ===${c.reset}`);
@@ -2282,13 +2390,106 @@ export const resultFormatters: NamedFormatter[] = [
         if (standings && Object.keys(standings).length) {
           console.log(`\n${c.bright}Standings:${c.reset}`);
           for (const [id, s] of Object.entries(standings)) {
-            console.log(`  ${id}: ${s.standing ?? s.value ?? '?'}${s.level ? ` (${s.level})` : ''}`);
+            const bounty = Number(s.outstanding_bounty ?? 0);
+            const parts = [`baseline ${s.baseline}`];
+            if (bounty > 0) parts.push(`${c.yellow}bounty ${bounty}${c.reset}`);
+            if (s.jailed_until) parts.push(`${c.red}jailed until ${s.jailed_until}${c.reset}`);
+            console.log(`  ${id}: ${s.reputation} (${parts.join(', ')})`);
           }
         }
         const stats = p.stats as Record<string, unknown> | undefined;
         if (stats && Object.keys(stats).length) {
           console.log(`\n${c.bright}Stats:${c.reset}`);
-          for (const [k, v] of Object.entries(stats)) console.log(`  ${k}: ${v}`);
+          for (const [k, v] of Object.entries(stats)) {
+            // PlayerStats carries per-category maps; bare interpolation would
+            // print "[object Object]".
+            console.log(`  ${k}: ${v !== null && typeof v === 'object' ? JSON.stringify(v) : v}`);
+          }
+        }
+      }
+
+      if (riding) {
+        console.log(`\n${c.bright}=== Riding ===${c.reset}`);
+        console.log(`Aboard ship: ${riding.ship_id}${riding.carrier ? ` (carrier: ${riding.carrier})` : ''}`);
+      }
+
+      if (ship) {
+        console.log(`\n${c.bright}=== Ship: ${ship.name} ===${c.reset} (${ship.class_id})`);
+        console.log(`  Hull: ${ship.hull}/${ship.max_hull}`);
+        console.log(`  Shield: ${ship.shield}/${ship.max_shield} (+${ship.shield_recharge}/tick)`);
+        console.log(`  Armor: ${ship.armor ?? 0}`);
+        console.log(`  Fuel: ${ship.fuel}/${ship.max_fuel}`);
+        console.log(`  Cargo: ${ship.cargo_used}/${ship.cargo_capacity}`);
+        console.log(`  CPU: ${ship.cpu_used}/${ship.cpu_capacity}`);
+        console.log(`  Power: ${ship.power_used}/${ship.power_capacity}`);
+        if (ship.disruption_ticks_remaining) {
+          console.log(`  ${c.red}Disrupted for ${ship.disruption_ticks_remaining} tick(s)${c.reset}`);
+        }
+        if (ship.burn_ticks_remaining) {
+          console.log(
+            `  ${c.red}Burning: ${ship.burn_damage_per_tick}/tick for ${ship.burn_ticks_remaining} tick(s)${c.reset}`,
+          );
+        }
+        if (ship.armor_melt_ticks_remaining) {
+          console.log(`  ${c.red}Armor melt for ${ship.armor_melt_ticks_remaining} tick(s)${c.reset}`);
+        }
+      }
+
+      if (loc) {
+        console.log(`\n${c.bright}=== Location ===${c.reset}`);
+        console.log(`System: ${loc.system_name} (${loc.system_id})`);
+        if (loc.empire) console.log(`Empire: ${loc.empire}`);
+        if (loc.security_status) console.log(`Security: ${loc.security_status}`);
+        console.log(`POI: ${loc.poi_name}${loc.poi_type ? ` (${loc.poi_type})` : ''}`);
+        if (loc.docked_at) console.log(`Docked at: ${loc.docked_at}`);
+        const connections = loc.connections as string[] | undefined;
+        if (connections?.length) console.log(`Connections: ${connections.join(', ')}`);
+        if (loc.in_transit) {
+          const dest = loc.transit_dest_system_name || loc.transit_dest_poi_name;
+          console.log(
+            `${c.cyan}[IN TRANSIT]${c.reset} ${loc.transit_type}${dest ? ` to ${dest}` : ''}` +
+              `${loc.transit_arrival_tick ? ` (arrival tick ${loc.transit_arrival_tick})` : ''}`,
+          );
+        }
+        if (loc.nearby_player_count) console.log(`Nearby players: ${loc.nearby_player_count}`);
+        if (loc.nearby_pirate_count) console.log(`${c.red}Nearby pirates: ${loc.nearby_pirate_count}${c.reset}`);
+        if (loc.nearby_empire_npc_count) console.log(`Nearby NPCs: ${loc.nearby_empire_npc_count}`);
+        if (loc.unknown_signature) console.log(`${c.yellow}Unknown signature detected — run a scan${c.reset}`);
+        const resources = loc.resources as Array<Record<string, unknown>> | undefined;
+        if (resources?.length) {
+          console.log(`Resources: ${resources.map((res) => `${res.item_name} (richness ${res.richness})`).join(', ')}`);
+        }
+      }
+
+      if (modules) {
+        console.log(`\n${c.bright}=== Modules (${modules.length}) ===${c.reset}`);
+        if (!modules.length) console.log(`  (none installed)`);
+        for (const m of modules) {
+          const ammo = m.current_ammo !== undefined ? ` [ammo ${m.current_ammo}/${m.magazine_size}]` : '';
+          console.log(`  ${m.name} — ${m.type}/${m.slot}, wear ${m.wear_status}${ammo}`);
+        }
+      }
+
+      if (cargo) {
+        console.log(`\n${c.bright}=== Cargo (${cargo.length}) ===${c.reset}`);
+        if (!cargo.length) console.log(`  (empty)`);
+        for (const item of cargo) console.log(`  ${item.item_name} x${item.quantity}`);
+      }
+
+      if (carried !== undefined || r.bay_capacity !== undefined || r.bay_used !== undefined) {
+        console.log(`\n${c.bright}=== Carrier Bay ===${c.reset}`);
+        if (r.bay_capacity !== undefined || r.bay_used !== undefined) {
+          console.log(`Bay: ${r.bay_used ?? 0}/${r.bay_capacity ?? '?'}`);
+        }
+        if (!carried?.length) console.log(`  (empty)`);
+        for (const cs of carried || []) console.log(`  ${cs.name} (${cs.class_name}) — ${cs.slots_used} slot(s)`);
+      }
+
+      if (skills && Object.keys(skills).length) {
+        console.log(`\n${c.bright}=== Skills ===${c.reset}`);
+        for (const [id, sk] of Object.entries(skills)) {
+          const next = sk.next_level_xp ? ` (${sk.xp}/${sk.next_level_xp} XP)` : ' (MAX)';
+          console.log(`  ${sk.name || id}: Level ${sk.level}/${sk.max_level}${next}`);
         }
       }
 
@@ -2307,6 +2508,32 @@ export const resultFormatters: NamedFormatter[] = [
       }
 
       if (r.credits !== undefined && !p) console.log(`\nCredits: ${r.credits}`);
+
+      // The delta wrapper sets `details` to the handler's own result on every
+      // non-queued mutation, so it arrives with sells, buys, refuels, repairs
+      // and bounty payouts. It holds the action-specific numbers that appear
+      // nowhere else in the delta, so render it rather than drop it.
+      if (r.details !== undefined && r.details !== null) {
+        const d = r.details;
+        const entries =
+          typeof d === 'object' && !Array.isArray(d)
+            ? // Drop details.message only when the envelope already printed the
+              // same string. Typed handler results carry their own message and
+              // the envelope's stays empty, so stripping it unconditionally
+              // would lose the only confirmation line.
+              Object.entries(d as Record<string, unknown>).filter(([k, v]) => k !== 'message' || v !== r.message)
+            : null;
+        if (entries === null) {
+          console.log(`\n${c.bright}=== Details ===${c.reset}`);
+          console.log(`  ${JSON.stringify(d)}`);
+        } else if (entries.length) {
+          console.log(`\n${c.bright}=== Details ===${c.reset}`);
+          for (const [k, v] of entries) {
+            console.log(`  ${k}: ${v !== null && typeof v === 'object' ? JSON.stringify(v) : v}`);
+          }
+        }
+      }
+
       if (r.message) console.log(`\n${c.green}OK:${c.reset} ${r.message}`);
       const hints = r.hints as string[] | undefined;
       if (hints?.length) for (const h of hints) console.log(`${c.dim}Hint: ${h}${c.reset}`);
@@ -2330,7 +2557,7 @@ export const resultFormatters: NamedFormatter[] = [
   },
 ];
 
-function displayResult(command: string, result?: Record<string, unknown>): void {
+export function displayResult(command: string, result?: Record<string, unknown>): void {
   if (!result) return;
 
   // Show auto-dock/undock flags before the result
