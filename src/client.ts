@@ -2254,12 +2254,76 @@ export const resultFormatters: NamedFormatter[] = [
     },
   },
 
-  // Simple message
+  // V2 state blob (v2_get_player, v2_get_missions, v2_get_queue and any delta
+  // that carries these sections). The server sends one populated section plus a
+  // `message`, which used to fall through to simple_message and get dropped.
+  {
+    name: 'v2_state',
+    hintKeys: ['player'],
+    format: (r) => {
+      const p = r.player as Record<string, unknown> | undefined;
+      const missions = r.missions as Record<string, unknown> | undefined;
+      const queue = r.queue as Record<string, unknown> | undefined;
+      if (!p && !missions && !queue) return false;
+
+      if (p) {
+        console.log(`\n${c.bright}=== Player ===${c.reset}`);
+        console.log(`Username: ${c.bright}${p.username}${c.reset}${p.clan_tag ? ` [${p.clan_tag}]` : ''}`);
+        console.log(`Empire: ${p.empire}`);
+        console.log(`Credits: ${p.credits}`);
+        console.log(`Faction: ${p.faction_id ? `${p.faction_id} (${p.faction_rank})` : 'None'}`);
+        if (p.home_base) console.log(`Home base: ${p.home_base}`);
+        if (p.status_message) console.log(`Status: ${p.status_message}`);
+        if (p.is_cloaked) console.log(`${c.cyan}[CLOAKED]${c.reset}`);
+        if (Array.isArray(p.citizenships) && p.citizenships.length) {
+          console.log(`Citizenships: ${(p.citizenships as string[]).join(', ')}`);
+        }
+        const standings = p.standings as Record<string, Record<string, unknown>> | undefined;
+        if (standings && Object.keys(standings).length) {
+          console.log(`\n${c.bright}Standings:${c.reset}`);
+          for (const [id, s] of Object.entries(standings)) {
+            console.log(`  ${id}: ${s.standing ?? s.value ?? '?'}${s.level ? ` (${s.level})` : ''}`);
+          }
+        }
+        const stats = p.stats as Record<string, unknown> | undefined;
+        if (stats && Object.keys(stats).length) {
+          console.log(`\n${c.bright}Stats:${c.reset}`);
+          for (const [k, v] of Object.entries(stats)) console.log(`  ${k}: ${v}`);
+        }
+      }
+
+      if (missions) {
+        const active = (missions.active as Array<Record<string, unknown>>) || [];
+        console.log(`\n${c.bright}=== Missions ===${c.reset}`);
+        console.log(`Active: ${active.length}/${missions.max_missions ?? '?'}`);
+        for (const m of active) {
+          console.log(`  ${m.title || m.mission_id} — ${m.status || 'active'}${m.progress ? ` (${m.progress})` : ''}`);
+        }
+      }
+
+      if (queue) {
+        console.log(`\n${c.bright}=== Action Queue ===${c.reset}`);
+        console.log(`Pending action: ${queue.has_pending ? 'yes' : 'no'}`);
+      }
+
+      if (r.credits !== undefined && !p) console.log(`\nCredits: ${r.credits}`);
+      if (r.message) console.log(`\n${c.green}OK:${c.reset} ${r.message}`);
+      const hints = r.hints as string[] | undefined;
+      if (hints?.length) for (const h of hints) console.log(`${c.dim}Hint: ${h}${c.reset}`);
+      return true;
+    },
+  },
+
+  // Simple message — true last resort: only a bare message, ignoring the
+  // auto-dock flags displayResult prints separately. Any other key means the
+  // response carries data that must not be dropped.
   {
     name: 'simple_message',
     hintKeys: ['message'],
     format: (r) => {
-      if (!r.message || Object.keys(r).length > 2) return false;
+      if (!r.message) return false;
+      const extra = Object.keys(r).filter((k) => k !== 'message' && k !== 'auto_docked' && k !== 'auto_undocked');
+      if (extra.length > 0) return false;
       console.log(`${c.green}OK:${c.reset} ${r.message}`);
       return true;
     },
