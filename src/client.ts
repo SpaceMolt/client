@@ -1536,8 +1536,14 @@ const V2_STATE_KEYS = new Set([
   'auto_undocked',
 ]);
 
-/** The data-bearing sections of a v2 state blob (everything but the scalars). */
-const V2_STATE_SECTIONS = [
+/**
+ * Every payload-carrying key of a v2 state blob — V2_STATE_KEYS minus the
+ * wire-format marker, the message and the auto-dock flags. `credits` and
+ * `hints` are in here on purpose: get_location answers with
+ * `{location, credits, message}`, so a guard that watched only the object
+ * sections would let a partial formatter claim it and drop the balance.
+ */
+const V2_STATE_PAYLOAD_KEYS = [
   'player',
   'ship',
   'modules',
@@ -1549,6 +1555,10 @@ const V2_STATE_SECTIONS = [
   'riding',
   'carried_ships',
   'details',
+  'credits',
+  'hints',
+  'bay_used',
+  'bay_capacity',
 ];
 
 /**
@@ -1559,7 +1569,7 @@ const V2_STATE_SECTIONS = [
  */
 function v2BlobCarriesUnowned(r: Record<string, unknown>, owned: string[]): boolean {
   if (!Object.keys(r).every((k) => V2_STATE_KEYS.has(k))) return false;
-  return V2_STATE_SECTIONS.some((s) => r[s] !== undefined && !owned.includes(s));
+  return V2_STATE_PAYLOAD_KEYS.some((s) => r[s] !== undefined && !owned.includes(s));
 }
 
 export const resultFormatters: NamedFormatter[] = [
@@ -2345,7 +2355,18 @@ export const resultFormatters: NamedFormatter[] = [
       const cargo = r.cargo as Array<Record<string, unknown>> | undefined;
       const carried = r.carried_ships as Array<Record<string, unknown>> | undefined;
       const skills = r.skills as Record<string, Record<string, unknown>> | undefined;
-      if (!V2_STATE_SECTIONS.some((s) => r[s] !== undefined)) return false;
+      if (!V2_STATE_PAYLOAD_KEYS.some((s) => r[s] !== undefined)) return false;
+
+      // Shape check: a v1 response can reuse a v2 key name with a different
+      // type (an array `missions`, for one). Decline rather than render an
+      // empty section over it — the raw JSON fallback is the honest answer.
+      const isObject = (v: unknown) => v !== null && typeof v === 'object' && !Array.isArray(v);
+      for (const k of ['player', 'ship', 'location', 'missions', 'queue', 'riding', 'skills']) {
+        if (r[k] !== undefined && !isObject(r[k])) return false;
+      }
+      for (const k of ['modules', 'cargo', 'carried_ships']) {
+        if (r[k] !== undefined && !Array.isArray(r[k])) return false;
+      }
 
       // Only claim the response if every top-level key is one V2GameState can
       // emit. A key outside that set is a genuinely new server field and must
@@ -2379,7 +2400,11 @@ export const resultFormatters: NamedFormatter[] = [
         const stats = p.stats as Record<string, unknown> | undefined;
         if (stats && Object.keys(stats).length) {
           console.log(`\n${c.bright}Stats:${c.reset}`);
-          for (const [k, v] of Object.entries(stats)) console.log(`  ${k}: ${v}`);
+          for (const [k, v] of Object.entries(stats)) {
+            // PlayerStats carries per-category maps; bare interpolation would
+            // print "[object Object]".
+            console.log(`  ${k}: ${v !== null && typeof v === 'object' ? JSON.stringify(v) : v}`);
+          }
         }
       }
 
@@ -2492,7 +2517,11 @@ export const resultFormatters: NamedFormatter[] = [
         const d = r.details;
         const entries =
           typeof d === 'object' && !Array.isArray(d)
-            ? Object.entries(d as Record<string, unknown>).filter(([k]) => k !== 'message')
+            ? // Drop details.message only when the envelope already printed the
+              // same string. Typed handler results carry their own message and
+              // the envelope's stays empty, so stripping it unconditionally
+              // would lose the only confirmation line.
+              Object.entries(d as Record<string, unknown>).filter(([k, v]) => k !== 'message' || v !== r.message)
             : null;
         if (entries === null) {
           console.log(`\n${c.bright}=== Details ===${c.reset}`);

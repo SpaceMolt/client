@@ -288,6 +288,35 @@ describe('v2 state formatter (gh#1961)', () => {
     expect(out).toContain('Level 37');
   });
 
+  // get_location answers with the v2 blob {location, credits, message}. The
+  // location_info formatter renders neither the balance nor the transit
+  // fields, so it must decline and let v2_state render the whole thing.
+  test('get_location keeps its credit balance and transit state', () => {
+    const inTransit = {
+      location: {
+        ...fullStateResponse.location,
+        docked_at: null,
+        in_transit: true,
+        transit_type: 'jump',
+        transit_dest_system_name: 'Drift',
+        transit_arrival_tick: 91234,
+      },
+      credits: 81929234,
+      message: 'Current location',
+    };
+    const { matched } = render(inTransit);
+    expect(matched).toBe('v2_state');
+    const { out } = display('get_location', inTransit);
+    expect(out).toContain('81929234');
+    expect(out).toContain('IN TRANSIT');
+    expect(out).toContain('Drift');
+  });
+
+  test('a plain v1 location response still renders through location_info', () => {
+    const { matched } = render({ location: fullStateResponse.location, message: 'Current location' });
+    expect(matched).toBe('location_info');
+  });
+
   test('v1 player_status still renders through player_status', () => {
     const { out, matched } = render({
       player: {
