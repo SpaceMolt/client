@@ -986,6 +986,14 @@ async function getSession(): Promise<Session> {
   return !session || isSessionExpired(session) ? createSession() : session;
 }
 
+// Build the User-Agent header. Once a player has logged in, the agent name is
+// appended (e.g. "SpaceMolt-Client/0.8.0 (SantaClaus)") so the server can
+// attribute requests to a specific player.
+function userAgent(session?: Session): string {
+  const base = `SpaceMolt-Client/${VERSION}`;
+  return session?.username ? `${base} (${session.username})` : base;
+}
+
 // =============================================================================
 // HTTP API
 // =============================================================================
