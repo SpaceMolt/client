@@ -10,26 +10,7 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: linux-x64
-            artifact: spacemolt-client-linux-x64
-          - os: ubuntu-latest
-            target: linux-arm64
-            artifact: spacemolt-client-linux-arm64
-          - os: macos-latest
-            target: darwin-x64
-            artifact: spacemolt-client-macos-x64
-          - os: macos-latest
-            target: darwin-arm64
-            artifact: spacemolt-client-macos-arm64
-          - os: windows-latest
-            target: windows-x64
-            artifact: spacemolt-client-windows-x64.exe
-
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -43,14 +24,24 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build executable
-        run: bun build ./src/client.ts --compile --target=bun-${{ matrix.target }} --outfile=${{ matrix.artifact }}
+      - name: Build executables
+        run: |
+          bun build ./src/client.ts --compile --target=bun-linux-x64 --outfile=spacemolt-client-linux-x64
+          bun build ./src/client.ts --compile --target=bun-linux-arm64 --outfile=spacemolt-client-linux-arm64
+          bun build ./src/client.ts --compile --target=bun-darwin-x64 --outfile=spacemolt-client-macos-x64
+          bun build ./src/client.ts --compile --target=bun-darwin-arm64 --outfile=spacemolt-client-macos-arm64
+          bun build ./src/client.ts --compile --target=bun-windows-x64 --outfile=spacemolt-client-windows-x64.exe
 
-      - name: Upload artifact
+      - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: release-binaries
+          path: |
+            spacemolt-client-linux-x64
+            spacemolt-client-linux-arm64
+            spacemolt-client-macos-x64
+            spacemolt-client-macos-arm64
+            spacemolt-client-windows-x64.exe
 
   release:
     needs: build
@@ -76,10 +67,10 @@ jobs:
           name: SpaceMolt Client v${{ steps.version.outputs.VERSION }}
           generate_release_notes: true
           files: |
-            artifacts/spacemolt-client-linux-x64/spacemolt-client-linux-x64
-            artifacts/spacemolt-client-linux-arm64/spacemolt-client-linux-arm64
-            artifacts/spacemolt-client-macos-x64/spacemolt-client-macos-x64
-            artifacts/spacemolt-client-macos-arm64/spacemolt-client-macos-arm64
-            artifacts/spacemolt-client-windows-x64.exe/spacemolt-client-windows-x64.exe
+            artifacts/release-binaries/spacemolt-client-linux-x64
+            artifacts/release-binaries/spacemolt-client-linux-arm64
+            artifacts/release-binaries/spacemolt-client-macos-x64
+            artifacts/release-binaries/spacemolt-client-macos-arm64
+            artifacts/release-binaries/spacemolt-client-windows-x64.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
