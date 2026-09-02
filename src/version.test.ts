@@ -30,6 +30,12 @@ const NUMERIC_FIELDS = new Set([
   'max_price',
   'price',
   'page_size',
+  'crew',
+  'marines',
+  'fit_crew',
+  'injured_crew',
+  'fit_marines',
+  'injured_marines',
 ]);
 
 function convertPayloadTypes(payload: Record<string, string>): Record<string, unknown> {
@@ -276,6 +282,22 @@ const SAMPLE_COMMANDS: Record<string, CommandConfig> = {
   faction_declare_war: { args: ['target_faction_id', 'reason'] },
   faction_query_intel: { args: ['system_name', 'system_id', 'poi_type', 'resource_type'] },
   faction_create_role: { args: ['name', 'priority', 'permissions'] },
+  claim_prize: {
+    args: ['prize_id', 'destination_base_id', 'crew_disposition'],
+    required: ['prize_id', 'destination_base_id'],
+  },
+  service_prize: {
+    args: ['prize_id', 'action', 'destination_base_id', 'quantity'],
+    required: ['prize_id', 'action'],
+  },
+  recruit_personnel: { args: ['crew', 'marines'] },
+  transfer_personnel: {
+    args: ['target', 'fit_crew', 'injured_crew', 'fit_marines', 'injured_marines'],
+    required: ['target'],
+  },
+  treat_personnel: { args: ['target', 'crew', 'marines', 'provider', 'reserve'] },
+  faction_personnel: { args: ['action', 'fit_crew', 'injured_crew', 'fit_marines', 'injured_marines'] },
+  pay_bounty: { args: ['empire', 'source'] },
 };
 
 describe('parseArgs - basic', () => {
@@ -336,6 +358,71 @@ describe('parseArgs - rest args', () => {
     const { payload } = parseArgs(['chat', 'channel=system', 'content=this is a message'], SAMPLE_COMMANDS);
     expect(payload.channel).toBe('system');
     expect(payload.content).toBe('this is a message');
+  });
+});
+
+describe('parseArgs - personnel and prize commands', () => {
+  test('claim_prize maps the required identifiers and optional disposition', () => {
+    const { payload } = parseArgs(['claim_prize', 'prize_123', 'base_456', 'faction_reserve'], SAMPLE_COMMANDS);
+    expect(payload).toEqual({
+      prize_id: 'prize_123',
+      destination_base_id: 'base_456',
+      crew_disposition: 'faction_reserve',
+    });
+  });
+
+  test('service_prize maps redirect parameters', () => {
+    const { payload } = parseArgs(['service_prize', 'prize_123', 'redirect', 'base_789'], SAMPLE_COMMANDS);
+    expect(payload).toEqual({ prize_id: 'prize_123', action: 'redirect', destination_base_id: 'base_789' });
+  });
+
+  test('recruit_personnel maps crew and marine counts', () => {
+    const { payload } = parseArgs(['recruit_personnel', '5', '2'], SAMPLE_COMMANDS);
+    expect(convertPayloadTypes(payload)).toEqual({ crew: 5, marines: 2 });
+  });
+
+  test('transfer_personnel maps each personnel class', () => {
+    const { payload } = parseArgs(['transfer_personnel', 'ally', '3', '1', '2', '0'], SAMPLE_COMMANDS);
+    expect(convertPayloadTypes(payload)).toEqual({
+      target: 'ally',
+      fit_crew: 3,
+      injured_crew: 1,
+      fit_marines: 2,
+      injured_marines: 0,
+    });
+  });
+
+  test('treat_personnel converts counts and reserve flag', () => {
+    const { payload } = parseArgs(['treat_personnel', 'ally', '5', '2', 'faction', 'true'], SAMPLE_COMMANDS);
+    expect(convertPayloadTypes(payload)).toEqual({
+      target: 'ally',
+      crew: 5,
+      marines: 2,
+      provider: 'faction',
+      reserve: true,
+    });
+  });
+
+  test('faction_personnel maps the reserve operation and counts', () => {
+    const { payload } = parseArgs(['faction_personnel', 'deposit', '4', '1', '2', '0'], SAMPLE_COMMANDS);
+    expect(convertPayloadTypes(payload)).toEqual({
+      action: 'deposit',
+      fit_crew: 4,
+      injured_crew: 1,
+      fit_marines: 2,
+      injured_marines: 0,
+    });
+  });
+
+  test('pay_bounty maps empire and funding source', () => {
+    const { payload } = parseArgs(['pay_bounty', 'solarian', 'faction'], SAMPLE_COMMANDS);
+    expect(payload).toEqual({ empire: 'solarian', source: 'faction' });
+  });
+
+  test('required prize and transfer identifiers are enforced', () => {
+    expect(validateRequiredArgs('claim_prize', { prize_id: 'prize_123' }, SAMPLE_COMMANDS)).toBe('destination_base_id');
+    expect(validateRequiredArgs('service_prize', { prize_id: 'prize_123' }, SAMPLE_COMMANDS)).toBe('action');
+    expect(validateRequiredArgs('transfer_personnel', {}, SAMPLE_COMMANDS)).toBe('target');
   });
 });
 
@@ -639,6 +726,23 @@ describe('client.ts source integrity', () => {
       'unsubscribe_market',
     ];
     for (const cmd of newCommands) {
+      expect(src).toContain(`  ${cmd}:`);
+    }
+  });
+
+  test('current personnel and prize commands are present', () => {
+    const clientPath = path.join(import.meta.dir, 'client.ts');
+    const src = fs.readFileSync(clientPath, 'utf-8');
+    const commands = [
+      'claim_prize',
+      'faction_personnel',
+      'pay_bounty',
+      'recruit_personnel',
+      'service_prize',
+      'transfer_personnel',
+      'treat_personnel',
+    ];
+    for (const cmd of commands) {
       expect(src).toContain(`  ${cmd}:`);
     }
   });

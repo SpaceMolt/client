@@ -192,6 +192,16 @@ const COMMANDS: Record<string, CommandConfig> = {
     required: ['target_id'],
     usage: "<creature_id>  (use get_nearby to see the 'creatures' list)",
   },
+  claim_prize: {
+    args: ['prize_id', 'destination_base_id', 'crew_disposition'],
+    required: ['prize_id', 'destination_base_id'],
+    usage: '<prize_id> <destination_base_id> [crew_disposition=aboard|faction_reserve]',
+  },
+  service_prize: {
+    args: ['prize_id', 'action', 'destination_base_id', 'quantity'],
+    required: ['prize_id', 'action'],
+    usage: '<prize_id> <stop|resume|redirect|refuel|repair> [destination_base_id] [quantity]',
+  },
 
   // Trading
   sell: {
@@ -249,6 +259,19 @@ const COMMANDS: Record<string, CommandConfig> = {
     args: ['module_id'],
     required: ['module_id'],
     usage: '<module_id>  (use get_ship to see installed modules)',
+  },
+  recruit_personnel: {
+    args: ['crew', 'marines'],
+    usage: '[crew] [marines]  (recruit fit personnel at a station; at least one count must be positive)',
+  },
+  transfer_personnel: {
+    args: ['target', 'fit_crew', 'injured_crew', 'fit_marines', 'injured_marines'],
+    required: ['target'],
+    usage: '<target> [fit_crew] [injured_crew] [fit_marines] [injured_marines]',
+  },
+  treat_personnel: {
+    args: ['target', 'crew', 'marines', 'provider', 'reserve'],
+    usage: '[target] [crew] [marines] [provider=station|field|faction] [reserve=true|false]',
   },
   refuel: { args: ['item_id', 'quantity'] },
   repair: {},
@@ -335,6 +358,10 @@ const COMMANDS: Record<string, CommandConfig> = {
   faction_create_role: { args: ['name', 'priority', 'permissions'] },
   faction_edit_role: { args: ['role_id', 'name', 'permissions'] },
   faction_delete_role: { args: ['role_id'] },
+  faction_personnel: {
+    args: ['action', 'fit_crew', 'injured_crew', 'fit_marines', 'injured_marines'],
+    usage: '[status|recruit|deposit|withdraw] [fit_crew] [injured_crew] [fit_marines] [injured_marines]',
+  },
 
   // Faction storage
   view_faction_storage: {},
@@ -573,6 +600,10 @@ const COMMANDS: Record<string, CommandConfig> = {
     args: ['amount'],
     required: ['amount'],
     usage: '<amount>  (prepay from the faction treasury toward the next corporate tax assessment)',
+  },
+  pay_bounty: {
+    args: ['empire', 'source'],
+    usage: '[empire] [source=self|faction]  (settle all outstanding bounty owed to one empire)',
   },
   petition: {
     args: ['empire_id', { rest: 'message' }],
@@ -2660,6 +2691,12 @@ const NUMERIC_FIELDS = new Set([
   'price',
   'page_size',
   'fee_percent',
+  'crew',
+  'marines',
+  'fit_crew',
+  'injured_crew',
+  'fit_marines',
+  'injured_marines',
 ]);
 
 // Convert string payload values to appropriate types (numbers, booleans)
@@ -2770,6 +2807,8 @@ ${c.bright}Action Commands (1 per tick, ~10 seconds):${c.reset}
     attack <player_id>        Attack player at POI
     scan <player_id>          Scan player for info
     cloak true/false          Toggle cloaking
+    claim_prize <id> <base>   Begin recovery of a captured intact ship
+    service_prize <id>...     Stop, redirect, refuel, or repair a claimed prize
 
   ${c.cyan}Battle:${c.reset}
     battle <action>           Battle system (join, leave, stance, target)
@@ -2806,6 +2845,12 @@ ${c.bright}Action Commands (1 per tick, ~10 seconds):${c.reset}
     unload_drone <drone_id>   Return a bay drone to cargo
     upload_drone_script <id> <script>  Program a drone (DroneLang)
 
+  ${c.cyan}Personnel:${c.reset}
+    recruit_personnel [counts]        Recruit crew or marines at a station
+    transfer_personnel <target>...    Transfer personnel to an allied ship
+    treat_personnel [target]...       Treat injured personnel
+    faction_personnel [action]...     Manage your faction's local reserve
+
   ${c.cyan}Empire & Governance:${c.reset}
     get_empire_info [empire]  Empire policy snapshot (all if omitted)
     citizenship [action]      Manage citizenships (list/apply/renounce/withdraw)
@@ -2814,6 +2859,7 @@ ${c.bright}Action Commands (1 per tick, ~10 seconds):${c.reset}
     get_faction_tax_estimate  Preview your faction's corporate tax
     prepay_tax <amount>       Prepay toward your next assessment
     faction_prepay_tax <amt>  Prepay from the faction treasury
+    pay_bounty [empire]       Settle an empire bounty from wallet or faction funds
 
   ${c.cyan}Achievements:${c.reset}
     get_achievements          Your achievement progress
