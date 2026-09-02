@@ -250,11 +250,6 @@ const COMMANDS: Record<string, CommandConfig> = {
     required: ['module_id'],
     usage: '<module_id>  (use get_ship to see installed modules)',
   },
-  repair_module: {
-    args: ['module_id'],
-    required: ['module_id'],
-    usage: '<module_id>  (use get_ship to see modules, requires Repair Kit in cargo)',
-  },
   refuel: { args: ['item_id', 'quantity'] },
   repair: {},
   use_item: {

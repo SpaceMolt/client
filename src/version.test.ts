@@ -258,7 +258,6 @@ const SAMPLE_COMMANDS: Record<string, CommandConfig> = {
   captains_log_list: { args: ['index'] },
   distress_signal: {},
   inspect_cargo: {},
-  repair_module: { args: ['module_id'], required: ['module_id'] },
   supply_commission: {
     args: ['commission_id', 'item_id', 'quantity'],
     required: ['commission_id', 'item_id', 'quantity'],
@@ -385,11 +384,6 @@ describe('parseArgs - new and fixed commands (v0.8.0)', () => {
     const { command, payload } = parseArgs(['session'], SAMPLE_COMMANDS);
     expect(command).toBe('session');
     expect(payload).toEqual({});
-  });
-
-  test('repair_module - positional', () => {
-    const { payload } = parseArgs(['repair_module', 'mod_uuid_123'], SAMPLE_COMMANDS);
-    expect(payload.module_id).toBe('mod_uuid_123');
   });
 
   test('supply_commission - three positional args', () => {
@@ -616,7 +610,6 @@ describe('client.ts source integrity', () => {
       'completed_missions',
       'distress_signal',
       'get_action_log',
-      'repair_module',
       'session',
       'supply_commission',
       'view_completed_mission',
@@ -682,6 +675,7 @@ describe('client.ts source integrity', () => {
       'get_recipes',
       'shipyard_showroom',
       'set_anonymous',
+      'repair_module',
     ];
     for (const cmd of removedCommands) {
       expect(src).not.toContain(`  ${cmd}:`);
