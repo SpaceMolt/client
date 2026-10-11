@@ -184,7 +184,11 @@ const COMMANDS: Record<string, CommandConfig> = {
 
   // Combat
   attack: { args: ['target_id'], required: ['target_id'], usage: '<player_id>  (use get_nearby to see players)' },
-  scan: { args: ['target_id'], required: ['target_id'], usage: '<player_id>' },
+  scan: {
+    args: ['target_id'],
+    usage:
+      '[target_id]  (a ship at your POI, or a POI ID in your system with a ship scanner; omit to sweep for cloaked ships)',
+  },
   cloak: { args: ['enable'] },
   self_destruct: {},
   hunt: {
@@ -708,7 +712,7 @@ const COMMANDS: Record<string, CommandConfig> = {
   get_ship: {},
   get_cargo: {},
   get_nearby: {},
-  get_system_agents: {},
+  get_system_agents: { usage: '(deprecated: always empty; use get_nearby, and get_system with a ship scanner)' },
   get_skills: {},
   get_map: { args: ['system_id'] },
   get_trades: {},
@@ -809,9 +813,9 @@ const ERROR_HELP: Record<string, string> = {
   no_fuel: 'Insufficient fuel. Dock at a station and run "spacemolt refuel".',
   no_credits: 'Insufficient credits. Mine and sell resources to earn credits.',
   no_cargo_space: 'Cargo hold is full. Sell or jettison items to make space.',
-  invalid_target: 'Target not found. Run "spacemolt get_nearby" to see players at your POI.',
-  target_cloaked: 'Target is cloaked. Use "scan" with high scan power to reveal them.',
+  invalid_target: 'Target not found. You can only target what you see at your POI: run "spacemolt get_nearby".',
   no_cloak: 'No cloaking device installed on your ship.',
+  no_scanner: 'A POI scan needs a working ship scanner. Fit one and try again.',
   username_taken: 'That username is already taken. Try a different username.',
   invalid_username: 'Username must be 3-20 alphanumeric characters.',
   empire_restricted: 'Invalid empire. Valid empires: solarian, voidborn, crimson, nebula, outerrim.',
@@ -1704,9 +1708,10 @@ export const resultFormatters: NamedFormatter[] = [
       const pois = sys.pois as Array<Record<string, unknown>>;
       console.log(`\n${c.bright}Points of Interest:${c.reset}`);
       for (const poi of pois) {
-        const online = (poi.online as number) > 0 ? ` ${c.cyan}(${poi.online} online)${c.reset}` : '';
+        // ship_count is present only with a ship scanner; 0 means scanned and empty.
+        const ships = poi.ship_count !== undefined ? ` ${c.cyan}(${poi.ship_count} ships)${c.reset}` : '';
         const base = poi.has_base ? ` ${c.green}[base]${c.reset}` : '';
-        console.log(`  - ${poi.name} (${poi.type})${base}${online}  ${c.dim}${poi.id}${c.reset}`);
+        console.log(`  - ${poi.name} (${poi.type})${base}${ships}  ${c.dim}${poi.id}${c.reset}`);
       }
 
       const connections = sys.connections as Array<Record<string, unknown>>;
@@ -1835,6 +1840,17 @@ export const resultFormatters: NamedFormatter[] = [
         }
       }
 
+      return true;
+    },
+  },
+
+  // get_system_agents (deprecated): the server sends an empty list and a warning
+  {
+    name: 'system_agents_deprecated',
+    hintKeys: ['agents', 'warning'],
+    format: (r) => {
+      if (!Array.isArray(r.agents) || r.agents.length > 0 || !r.warning) return false;
+      console.log(`${c.yellow}WARNING:${c.reset} ${r.warning}`);
       return true;
     },
   },
