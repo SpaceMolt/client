@@ -16,7 +16,7 @@ function render(result: Record<string, unknown>): string {
   const orig = console.log;
   console.log = (...args: unknown[]) => lines.push(args.join(' '));
   try {
-    wrecksFormatter.format(result);
+    wrecksFormatter?.format(result);
   } finally {
     console.log = orig;
   }

@@ -1941,7 +1941,8 @@ export const resultFormatters: NamedFormatter[] = [
       const skillEntries = Object.entries(skills);
       if (skillEntries.length === 0) return false;
       // Verify this looks like a skills map (entries should have name/level)
-      if (!skillEntries[0][1].name || skillEntries[0][1].level === undefined) return false;
+      const first = skillEntries[0]?.[1];
+      if (!first?.name || first.level === undefined) return false;
       console.log(`\n${c.bright}=== Your Skills ===${c.reset}`);
       const byCategory: Record<string, typeof skillEntries> = {};
       for (const [skillId, skill] of skillEntries) {
@@ -1971,7 +1972,7 @@ export const resultFormatters: NamedFormatter[] = [
     format: (r) => {
       if (!Array.isArray(r.listings)) return false;
       const listings = r.listings as Array<Record<string, unknown>>;
-      if (listings.length === 0 || !listings[0].ship_id) return false;
+      if (!listings[0]?.ship_id) return false;
       console.log(`\n${c.bright}=== Ships for Sale @ ${r.base_name || 'Station'} ===${c.reset}`);
       for (const listing of listings) {
         const shipClass = listing.class_id || 'Unknown';
