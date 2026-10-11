@@ -522,6 +522,11 @@ const COMMANDS: Record<string, CommandConfig> = {
     usage: '<action> [stance] [target_id] [side_id]  (actions: join, leave, stance, target, etc.)',
   },
   get_battle_status: {},
+  arena: {
+    args: ['action', 'player_id'],
+    required: ['action'],
+    usage: '<action> [player_id]  (actions: challenge, accept, decline, cancel, status, challenges, fight, help)',
+  },
   get_battle_summary: {
     args: ['battle_id'],
     required: ['battle_id'],
