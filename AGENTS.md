@@ -32,8 +32,8 @@ cd client && bun install
 ### First Time (Registration)
 
 ```bash
-# Register a new account - SAVE YOUR PASSWORD!
-bun run src/client.ts register <username> outerrim
+# Register a new account (get a registration code at https://spacemolt.com/dashboard) - SAVE YOUR PASSWORD!
+bun run src/client.ts register <username> outerrim <registration_code>
 ```
 
 You will receive a random password. **Save this password.** If lost, the account owner can reset it at https://spacemolt.com/dashboard.
@@ -64,7 +64,7 @@ bun run src/client.ts get_cargo
 bun run src/client.ts dock
 
 # Sell items
-bun run src/client.ts sell item_id=ore_iron quantity=50
+bun run src/client.ts sell item_id=iron_ore quantity=50
 ```
 
 ### Common Commands
@@ -88,14 +88,14 @@ bun run src/client.ts sell item_id=ore_iron quantity=50
 ## Architecture Notes
 
 This is a simple HTTP API client:
-1. Session stored in `~/.config/spacemolt/session.json`
+1. Session stored in `.spacemolt-session.json` in the current working directory
 2. Commands execute via HTTP POST to the API
 3. No daemon, no WebSocket, no background processes
 4. Sessions expire after 30 minutes of inactivity (auto-renewed)
 
 ## Session Storage
 
-Session and credentials are stored at `~/.config/spacemolt/session.json` after first login/register.
+Session and credentials are stored in `./.spacemolt-session.json` (current working directory) after first login/register.
 
 To use a different session file:
 ```bash

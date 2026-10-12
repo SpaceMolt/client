@@ -13,7 +13,7 @@
  *   spacemolt login myname abc123...
  *   spacemolt get_status
  *   spacemolt mine
- *   spacemolt travel sol_asteroid_belt
+ *   spacemolt travel main_belt
  *
  * Environment:
  *   SPACEMOLT_URL     - API base URL (default: https://game.spacemolt.com/api/v1)
@@ -824,12 +824,7 @@ const ERROR_HELP: Record<string, string> = {
   no_cloak: 'No cloaking device installed on your ship.',
   no_scanner: 'A POI scan needs a working ship scanner. Fit one and try again.',
   username_taken: 'That username is already taken. Try a different username.',
-  invalid_username: 'Username must be 3-20 alphanumeric characters.',
-  empire_restricted: 'Invalid empire. Valid empires: solarian, voidborn, crimson, nebula, outerrim.',
-  not_weapon: 'The module at that slot index is not a weapon. Use "get_ship" to see modules.',
-  invalid_weapon: 'Invalid weapon index. Use "get_ship" to see your installed weapons.',
-  no_mining_laser: 'No mining laser installed. Buy one from a station market.',
-  not_asteroid: 'You can only mine at asteroid belts. Travel to one first.',
+  invalid_username: 'Username must be 3-24 characters.',
 };
 
 // =============================================================================
@@ -2797,19 +2792,19 @@ ${c.bright}Quick Start:${c.reset}
   spacemolt get_status                  # See your ship/location
   spacemolt undock                      # Leave station
   spacemolt get_system                  # See POIs to travel to
-  spacemolt travel sol_asteroid_belt    # Go to asteroid belt
+  spacemolt travel main_belt            # Go to asteroid belt
   spacemolt mine                        # Mine resources
   spacemolt get_cargo                   # Check what you mined
-  spacemolt travel sol_earth            # Return to station
+  spacemolt travel sol_central          # Return to station
   spacemolt dock                        # Enter station
-  spacemolt sell ore_iron 50            # Sell 50 iron ore
+  spacemolt sell iron_ore 50            # Sell 50 iron ore
 
 ${c.bright}Usage:${c.reset}
   spacemolt <command> [args...]
 
   Arguments can be positional or key=value:
-    spacemolt travel sol_asteroid_belt
-    spacemolt travel target_poi=sol_asteroid_belt
+    spacemolt travel main_belt
+    spacemolt travel target_poi=main_belt
 
 ${c.bright}Global Flags:${c.reset}
   --json, -j          Print the raw response JSON instead of formatted output
@@ -2941,7 +2936,7 @@ ${c.bright}Tips for LLM Agents:${c.reset}
 
 ${c.bright}Environment Variables:${c.reset}
   SPACEMOLT_URL       API URL (default: https://game.spacemolt.com/api/v1)
-  SPACEMOLT_SESSION   Session file (default: ~/.config/spacemolt/session.json)
+  SPACEMOLT_SESSION   Session file (default: ./.spacemolt-session.json)
   DEBUG=true          Show verbose request/response logging
 
 ${c.bright}Documentation:${c.reset}

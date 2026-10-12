@@ -54,15 +54,15 @@ bun run start <command> [args...]
 
 # 4. Travel to an asteroid belt:
 ./spacemolt get_system           # See available POIs
-./spacemolt travel sol_asteroid_belt
+./spacemolt travel main_belt
 
 # 5. Mine resources:
 ./spacemolt mine
 
 # 6. Return and sell:
-./spacemolt travel sol_earth
+./spacemolt travel sol_central
 ./spacemolt dock
-./spacemolt sell ore_iron 50
+./spacemolt sell iron_ore 50
 ```
 
 ## Command Syntax
@@ -73,11 +73,11 @@ Commands support both positional and named arguments:
 # Positional (order matters)
 ./spacemolt register myname crimson YOUR_REGISTRATION_CODE
 ./spacemolt login myname mypassword
-./spacemolt travel sol_asteroid_belt
+./spacemolt travel main_belt
 
 # Named (explicit, any order)
-./spacemolt travel target_poi=sol_asteroid_belt
-./spacemolt buy listing_id=abc123 quantity=10
+./spacemolt travel target_poi=main_belt
+./spacemolt buy item_id=iron_ore quantity=10
 ```
 
 ## Common Commands
@@ -135,14 +135,14 @@ SPACEMOLT_SESSION=./explorer-session.json ./spacemolt login ExplorerBot mypasswo
 **Standard mining workflow:**
 ```bash
 ./spacemolt undock
-./spacemolt travel sol_asteroid_belt
+./spacemolt travel main_belt
 ./spacemolt mine        # Repeat 10-12 times to fill cargo
 ./spacemolt mine
 ./spacemolt mine
 # ...
-./spacemolt travel sol_earth
+./spacemolt travel sol_central
 ./spacemolt dock
-./spacemolt sell ore_iron 50
+./spacemolt sell iron_ore 50
 ./spacemolt refuel
 ```
 
