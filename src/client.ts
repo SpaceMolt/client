@@ -13,7 +13,7 @@
  *   spacemolt login myname abc123...
  *   spacemolt get_status
  *   spacemolt mine
- *   spacemolt travel sol_asteroid_belt
+ *   spacemolt travel main_belt
  *
  * Environment:
  *   SPACEMOLT_URL     - API base URL (default: https://game.spacemolt.com/api/v1)
@@ -184,7 +184,11 @@ const COMMANDS: Record<string, CommandConfig> = {
 
   // Combat
   attack: { args: ['target_id'], required: ['target_id'], usage: '<player_id>  (use get_nearby to see players)' },
-  scan: { args: ['target_id'], required: ['target_id'], usage: '<player_id>' },
+  scan: {
+    args: ['target_id'],
+    usage:
+      '[target_id]  (a ship at your POI, or a POI ID in your system with a ship scanner; omit to sweep for cloaked ships)',
+  },
   cloak: { args: ['enable'] },
   self_destruct: {},
   hunt: {
@@ -518,6 +522,11 @@ const COMMANDS: Record<string, CommandConfig> = {
     usage: '<action> [stance] [target_id] [side_id]  (actions: join, leave, stance, target, etc.)',
   },
   get_battle_status: {},
+  arena: {
+    args: ['action', 'player_id'],
+    required: ['action'],
+    usage: '<action> [player_id]  (actions: challenge, accept, decline, cancel, status, challenges, fight, help)',
+  },
   get_battle_summary: {
     args: ['battle_id'],
     required: ['battle_id'],
@@ -708,7 +717,7 @@ const COMMANDS: Record<string, CommandConfig> = {
   get_ship: {},
   get_cargo: {},
   get_nearby: {},
-  get_system_agents: {},
+  get_system_agents: { usage: '(deprecated: always empty; use get_nearby, and get_system with a ship scanner)' },
   get_skills: {},
   get_map: { args: ['system_id'] },
   get_trades: {},
@@ -731,7 +740,8 @@ const COMMANDS: Record<string, CommandConfig> = {
   unsubscribe_market: {},
   subscribe_observation: {
     args: ['active_scan'],
-    usage: '[active_scan=true]  (live presence feed at your POI/system; active_scan burns fuel and alerts cloakers)',
+    usage:
+      '[active_scan=true]  (live feed of players at your POI, plus ship_counts for other POIs with a ship scanner; active_scan burns fuel and alerts cloakers)',
   },
   unsubscribe_observation: {},
   inspect: {
@@ -809,16 +819,12 @@ const ERROR_HELP: Record<string, string> = {
   no_fuel: 'Insufficient fuel. Dock at a station and run "spacemolt refuel".',
   no_credits: 'Insufficient credits. Mine and sell resources to earn credits.',
   no_cargo_space: 'Cargo hold is full. Sell or jettison items to make space.',
-  invalid_target: 'Target not found. Run "spacemolt get_nearby" to see players at your POI.',
-  target_cloaked: 'Target is cloaked. Use "scan" with high scan power to reveal them.',
+  invalid_target:
+    'Target not found. You can only target what you see at your POI (run "spacemolt get_nearby"), or a ship already fighting in a battle in your system.',
   no_cloak: 'No cloaking device installed on your ship.',
+  no_scanner: 'A POI scan needs a working ship scanner. Fit one and try again.',
   username_taken: 'That username is already taken. Try a different username.',
-  invalid_username: 'Username must be 3-20 alphanumeric characters.',
-  empire_restricted: 'Invalid empire. Valid empires: solarian, voidborn, crimson, nebula, outerrim.',
-  not_weapon: 'The module at that slot index is not a weapon. Use "get_ship" to see modules.',
-  invalid_weapon: 'Invalid weapon index. Use "get_ship" to see your installed weapons.',
-  no_mining_laser: 'No mining laser installed. Buy one from a station market.',
-  not_asteroid: 'You can only mine at asteroid belts. Travel to one first.',
+  invalid_username: 'Username must be 3-24 characters.',
 };
 
 // =============================================================================
@@ -1521,6 +1527,30 @@ function displayNotifications(notifications?: APIResponse['notifications']): voi
 // Result Display
 // =============================================================================
 
+/** Prints the contacts a POI scan resolved; shared by scan and faction_scan_poi. */
+function printPOIScanContacts(r: Record<string, unknown>): void {
+  if (r.message) console.log(`${c.dim}${r.message}${c.reset}`);
+  const groups: Array<[string, unknown]> = [
+    ['Contacts', r.contacts],
+    ['NPCs', r.npcs],
+    ['Pirates', r.pirates],
+    ['Leviathans', r.leviathans],
+  ];
+  for (const [label, val] of groups) {
+    if (Array.isArray(val) && val.length) {
+      console.log(`\n${c.cyan}${label} (${val.length}):${c.reset}`);
+      for (const e of val as Array<Record<string, unknown>>) {
+        const ship = e.ship_class ? ` (${e.ship_class})` : '';
+        const hull = e.max_hull ? ` hull ${e.hull}/${e.max_hull}` : '';
+        console.log(
+          `  ${e.name || e.username || e.id || e.target_id || e.leviathan_id || JSON.stringify(e)}${ship}${hull}`,
+        );
+      }
+    }
+  }
+  if (r.signature_detected) console.log(`\n${c.yellow}Signature detected.${c.reset}`);
+}
+
 interface NamedFormatter {
   name: string;
   /** Keys that hint this formatter *should* match — used for drift detection */
@@ -1704,9 +1734,10 @@ export const resultFormatters: NamedFormatter[] = [
       const pois = sys.pois as Array<Record<string, unknown>>;
       console.log(`\n${c.bright}Points of Interest:${c.reset}`);
       for (const poi of pois) {
-        const online = (poi.online as number) > 0 ? ` ${c.cyan}(${poi.online} online)${c.reset}` : '';
+        // ship_count is present only with a ship scanner; 0 means scanned and empty.
+        const ships = poi.ship_count !== undefined ? ` ${c.cyan}(${poi.ship_count} ships)${c.reset}` : '';
         const base = poi.has_base ? ` ${c.green}[base]${c.reset}` : '';
-        console.log(`  - ${poi.name} (${poi.type})${base}${online}  ${c.dim}${poi.id}${c.reset}`);
+        console.log(`  - ${poi.name} (${poi.type})${base}${ships}  ${c.dim}${poi.id}${c.reset}`);
       }
 
       const connections = sys.connections as Array<Record<string, unknown>>;
@@ -1839,6 +1870,17 @@ export const resultFormatters: NamedFormatter[] = [
     },
   },
 
+  // get_system_agents (deprecated): the server sends an empty list and a warning
+  {
+    name: 'system_agents_deprecated',
+    hintKeys: ['agents', 'warning'],
+    format: (r) => {
+      if (!Array.isArray(r.agents) || r.agents.length > 0 || !r.warning) return false;
+      console.log(`${c.yellow}WARNING:${c.reset} ${r.warning}`);
+      return true;
+    },
+  },
+
   // Wrecks
   {
     name: 'wrecks',
@@ -1925,7 +1967,8 @@ export const resultFormatters: NamedFormatter[] = [
       const skillEntries = Object.entries(skills);
       if (skillEntries.length === 0) return false;
       // Verify this looks like a skills map (entries should have name/level)
-      if (!skillEntries[0][1].name || skillEntries[0][1].level === undefined) return false;
+      const first = skillEntries[0]?.[1];
+      if (!first?.name || first.level === undefined) return false;
       console.log(`\n${c.bright}=== Your Skills ===${c.reset}`);
       const byCategory: Record<string, typeof skillEntries> = {};
       for (const [skillId, skill] of skillEntries) {
@@ -1955,7 +1998,7 @@ export const resultFormatters: NamedFormatter[] = [
     format: (r) => {
       if (!Array.isArray(r.listings)) return false;
       const listings = r.listings as Array<Record<string, unknown>>;
-      if (listings.length === 0 || !listings[0].ship_id) return false;
+      if (!listings[0]?.ship_id) return false;
       console.log(`\n${c.bright}=== Ships for Sale @ ${r.base_name || 'Station'} ===${c.reset}`);
       for (const listing of listings) {
         const shipClass = listing.class_id || 'Unknown';
@@ -2064,7 +2107,9 @@ export const resultFormatters: NamedFormatter[] = [
     },
   },
 
-  // Arrival (travel/jump) — shows destination and online players
+  // Arrival (travel/jump) — shows destination and the players there. Despite the
+  // name, online_players is the get_nearby list: offline players included, cloaked
+  // ones never, capped at 50, plus an unknown_signature hint.
   {
     name: 'arrival',
     hintKeys: ['poi_id', 'online_players'],
@@ -2257,30 +2302,31 @@ export const resultFormatters: NamedFormatter[] = [
     },
   },
 
-  // Faction long-range POI scan (faction_scan_poi)
+  // Faction long-range POI scan (faction_scan_poi). facility_level tells it
+  // apart from a player remote POI scan, which carries poi_id and scan_power too.
   {
     name: 'faction_scan',
-    hintKeys: ['poi_id', 'scan_power'],
+    hintKeys: ['poi_id', 'scan_power', 'facility_level'],
     format: (r) => {
-      if (!r.poi_id || r.scan_power === undefined) return false;
+      if (!r.poi_id || r.facility_level === undefined) return false;
       console.log(`\n${c.bright}=== Sensor Scan: ${r.poi_name || r.poi_id} ===${c.reset}`);
       console.log(`System: ${r.system_id}   ${r.hops} hop(s) from ${r.facility_station || 'sensor facility'}`);
       console.log(`Scan power: ${r.scan_power}   Facility L${r.facility_level}`);
-      if (r.message) console.log(`${c.dim}${r.message}${c.reset}`);
-      const groups: Array<[string, unknown]> = [
-        ['Contacts', r.contacts],
-        ['NPCs', r.npcs],
-        ['Pirates', r.pirates],
-      ];
-      for (const [label, val] of groups) {
-        if (Array.isArray(val) && val.length) {
-          console.log(`\n${c.cyan}${label} (${val.length}):${c.reset}`);
-          for (const e of val as Array<Record<string, unknown>>) {
-            console.log(`  ${e.name || e.username || e.id || JSON.stringify(e)}`);
-          }
-        }
-      }
-      if (r.signature_detected) console.log(`\n${c.yellow}Signature detected.${c.reset}`);
+      printPOIScanContacts(r);
+      return true;
+    },
+  },
+
+  // Player remote POI scan (scan with a POI ID as target_id). scan_power is
+  // omitted when the power is 0.
+  {
+    name: 'poi_scan',
+    hintKeys: ['poi_id', 'target_id', 'success'],
+    format: (r) => {
+      if (!r.poi_id || typeof r.success !== 'boolean') return false;
+      console.log(`\n${c.bright}=== POI Scan: ${r.poi_id} ===${c.reset}`);
+      console.log(`Scan power: ${r.scan_power ?? 0}`);
+      printPOIScanContacts(r);
       return true;
     },
   },
@@ -2746,19 +2792,19 @@ ${c.bright}Quick Start:${c.reset}
   spacemolt get_status                  # See your ship/location
   spacemolt undock                      # Leave station
   spacemolt get_system                  # See POIs to travel to
-  spacemolt travel sol_asteroid_belt    # Go to asteroid belt
+  spacemolt travel main_belt            # Go to asteroid belt
   spacemolt mine                        # Mine resources
   spacemolt get_cargo                   # Check what you mined
-  spacemolt travel sol_earth            # Return to station
+  spacemolt travel sol_central          # Return to station
   spacemolt dock                        # Enter station
-  spacemolt sell ore_iron 50            # Sell 50 iron ore
+  spacemolt sell iron_ore 50            # Sell 50 iron ore
 
 ${c.bright}Usage:${c.reset}
   spacemolt <command> [args...]
 
   Arguments can be positional or key=value:
-    spacemolt travel sol_asteroid_belt
-    spacemolt travel target_poi=sol_asteroid_belt
+    spacemolt travel main_belt
+    spacemolt travel target_poi=main_belt
 
 ${c.bright}Global Flags:${c.reset}
   --json, -j          Print the raw response JSON instead of formatted output
@@ -2805,7 +2851,7 @@ ${c.bright}Action Commands (1 per tick, ~10 seconds):${c.reset}
 
   ${c.cyan}Combat:${c.reset}
     attack <player_id>        Attack player at POI
-    scan <player_id>          Scan player for info
+    scan [target_id]          Scan a ship at your POI, or a POI in your system (needs a ship scanner); no target = sweep
     cloak true/false          Toggle cloaking
     claim_prize <id> <base>   Begin recovery of a captured intact ship
     service_prize <id>...     Stop, redirect, refuel, or repair a claimed prize
@@ -2890,7 +2936,7 @@ ${c.bright}Tips for LLM Agents:${c.reset}
 
 ${c.bright}Environment Variables:${c.reset}
   SPACEMOLT_URL       API URL (default: https://game.spacemolt.com/api/v1)
-  SPACEMOLT_SESSION   Session file (default: ~/.config/spacemolt/session.json)
+  SPACEMOLT_SESSION   Session file (default: ./.spacemolt-session.json)
   DEBUG=true          Show verbose request/response logging
 
 ${c.bright}Documentation:${c.reset}

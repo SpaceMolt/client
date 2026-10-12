@@ -56,7 +56,7 @@ function extractClientCommands(src: string): string[] {
   const block = src.slice(start, end);
   // Match 2-space-indented top-level keys: `  keyname: {` or `  keyname: (`
   const matches = [...block.matchAll(/^\s{2}([a-z][a-z0-9_]+):\s*[{(]/gm)];
-  return matches.map((m) => m[1]);
+  return matches.map((m) => m[1] as string);
 }
 
 const skip = process.env.SKIP_API_SYNC === '1';

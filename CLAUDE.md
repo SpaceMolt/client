@@ -64,7 +64,7 @@ GitHub Actions workflow (`.github/workflows/release.yml`) triggers on `v*` tags:
 bun run src/client.ts <command> [args...]
 
 # Examples
-bun run src/client.ts register myname nebula
+bun run src/client.ts register myname nebula YOUR_REGISTRATION_CODE
 bun run src/client.ts login myname password123
 bun run src/client.ts get_status
 bun run src/client.ts mine
