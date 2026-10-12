@@ -740,7 +740,8 @@ const COMMANDS: Record<string, CommandConfig> = {
   unsubscribe_market: {},
   subscribe_observation: {
     args: ['active_scan'],
-    usage: '[active_scan=true]  (live presence feed at your POI/system; active_scan burns fuel and alerts cloakers)',
+    usage:
+      '[active_scan=true]  (live feed of players at your POI, plus ship_counts for other POIs with a ship scanner; active_scan burns fuel and alerts cloakers)',
   },
   unsubscribe_observation: {},
   inspect: {
@@ -818,7 +819,8 @@ const ERROR_HELP: Record<string, string> = {
   no_fuel: 'Insufficient fuel. Dock at a station and run "spacemolt refuel".',
   no_credits: 'Insufficient credits. Mine and sell resources to earn credits.',
   no_cargo_space: 'Cargo hold is full. Sell or jettison items to make space.',
-  invalid_target: 'Target not found. You can only target what you see at your POI: run "spacemolt get_nearby".',
+  invalid_target:
+    'Target not found. You can only target what you see at your POI (run "spacemolt get_nearby"), or a ship already fighting in a battle in your system.',
   no_cloak: 'No cloaking device installed on your ship.',
   no_scanner: 'A POI scan needs a working ship scanner. Fit one and try again.',
   username_taken: 'That username is already taken. Try a different username.',
@@ -1530,6 +1532,30 @@ function displayNotifications(notifications?: APIResponse['notifications']): voi
 // Result Display
 // =============================================================================
 
+/** Prints the contacts a POI scan resolved; shared by scan and faction_scan_poi. */
+function printPOIScanContacts(r: Record<string, unknown>): void {
+  if (r.message) console.log(`${c.dim}${r.message}${c.reset}`);
+  const groups: Array<[string, unknown]> = [
+    ['Contacts', r.contacts],
+    ['NPCs', r.npcs],
+    ['Pirates', r.pirates],
+    ['Leviathans', r.leviathans],
+  ];
+  for (const [label, val] of groups) {
+    if (Array.isArray(val) && val.length) {
+      console.log(`\n${c.cyan}${label} (${val.length}):${c.reset}`);
+      for (const e of val as Array<Record<string, unknown>>) {
+        const ship = e.ship_class ? ` (${e.ship_class})` : '';
+        const hull = e.max_hull ? ` hull ${e.hull}/${e.max_hull}` : '';
+        console.log(
+          `  ${e.name || e.username || e.id || e.target_id || e.leviathan_id || JSON.stringify(e)}${ship}${hull}`,
+        );
+      }
+    }
+  }
+  if (r.signature_detected) console.log(`\n${c.yellow}Signature detected.${c.reset}`);
+}
+
 interface NamedFormatter {
   name: string;
   /** Keys that hint this formatter *should* match — used for drift detection */
@@ -2086,7 +2112,9 @@ export const resultFormatters: NamedFormatter[] = [
     },
   },
 
-  // Arrival (travel/jump) — shows destination and online players
+  // Arrival (travel/jump) — shows destination and the players there. Despite the
+  // name, online_players is the get_nearby list: offline players included, cloaked
+  // ones never, capped at 50, plus an unknown_signature hint.
   {
     name: 'arrival',
     hintKeys: ['poi_id', 'online_players'],
@@ -2279,30 +2307,31 @@ export const resultFormatters: NamedFormatter[] = [
     },
   },
 
-  // Faction long-range POI scan (faction_scan_poi)
+  // Faction long-range POI scan (faction_scan_poi). facility_level tells it
+  // apart from a player remote POI scan, which carries poi_id and scan_power too.
   {
     name: 'faction_scan',
-    hintKeys: ['poi_id', 'scan_power'],
+    hintKeys: ['poi_id', 'scan_power', 'facility_level'],
     format: (r) => {
-      if (!r.poi_id || r.scan_power === undefined) return false;
+      if (!r.poi_id || r.facility_level === undefined) return false;
       console.log(`\n${c.bright}=== Sensor Scan: ${r.poi_name || r.poi_id} ===${c.reset}`);
       console.log(`System: ${r.system_id}   ${r.hops} hop(s) from ${r.facility_station || 'sensor facility'}`);
       console.log(`Scan power: ${r.scan_power}   Facility L${r.facility_level}`);
-      if (r.message) console.log(`${c.dim}${r.message}${c.reset}`);
-      const groups: Array<[string, unknown]> = [
-        ['Contacts', r.contacts],
-        ['NPCs', r.npcs],
-        ['Pirates', r.pirates],
-      ];
-      for (const [label, val] of groups) {
-        if (Array.isArray(val) && val.length) {
-          console.log(`\n${c.cyan}${label} (${val.length}):${c.reset}`);
-          for (const e of val as Array<Record<string, unknown>>) {
-            console.log(`  ${e.name || e.username || e.id || JSON.stringify(e)}`);
-          }
-        }
-      }
-      if (r.signature_detected) console.log(`\n${c.yellow}Signature detected.${c.reset}`);
+      printPOIScanContacts(r);
+      return true;
+    },
+  },
+
+  // Player remote POI scan (scan with a POI ID as target_id). scan_power is
+  // omitted when the power is 0.
+  {
+    name: 'poi_scan',
+    hintKeys: ['poi_id', 'target_id', 'success'],
+    format: (r) => {
+      if (!r.poi_id || typeof r.success !== 'boolean') return false;
+      console.log(`\n${c.bright}=== POI Scan: ${r.poi_id} ===${c.reset}`);
+      console.log(`Scan power: ${r.scan_power ?? 0}`);
+      printPOIScanContacts(r);
       return true;
     },
   },
@@ -2827,7 +2856,7 @@ ${c.bright}Action Commands (1 per tick, ~10 seconds):${c.reset}
 
   ${c.cyan}Combat:${c.reset}
     attack <player_id>        Attack player at POI
-    scan <player_id>          Scan player for info
+    scan [target_id]          Scan a ship at your POI, or a POI in your system (needs a ship scanner); no target = sweep
     cloak true/false          Toggle cloaking
     claim_prize <id> <base>   Begin recovery of a captured intact ship
     service_prize <id>...     Stop, redirect, refuel, or repair a claimed prize
